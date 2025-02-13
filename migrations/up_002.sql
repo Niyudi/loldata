@@ -12,12 +12,11 @@ CREATE TABLE registry.players (
 CREATE TABLE registry.matches (
 	region        static.regions,
 	"id"          bigint,
-	patch_id      smallint NOT NULL,
+	patch         smallint NOT NULL,
 	time          bigint NOT NULL,
 	duration      bigint NOT NULL,
 	is_blue_win   boolean,
-	PRIMARY KEY (region, "id"),
-	FOREIGN KEY ("patch_id") REFERENCES "static".patches ("id")
+	PRIMARY KEY (region, "id")
 );
 
 CREATE TABLE registry.match_players (

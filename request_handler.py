@@ -2,11 +2,10 @@ import requests
 
 from datetime import datetime
 from enum import Enum
-from sqlalchemy.dialects.postgresql import insert
 from time import sleep, time
 from typing import Any
 
-from db_models.static import Ranks, Roles
+from db_models.static import Ranks, Regions, Roles
 
 from constants import CALL_INTERVAL, DEFAULT_RETRIES, DEFAULT_RETRY_INTERVAL, RIOT_API_KEY
 
@@ -98,9 +97,9 @@ def handle_request(request: Request) -> dict[str, Any]:
                                     break
 
             return {
-                'region': region,
+                'region': Regions[region],
                 'id': int(id),
-                'patch': '.'.join(json['info']['gameVersion'].split('.')[:2]),
+                'patch': int('{:02}{:02}'.format(*json['info']['gameVersion'].split('.')[:2])),
                 'time': int(json['info']['gameStartTimestamp']),
                 'duration': int(json['info']['gameDuration']),
                 'is_blue_win': is_blue_win,

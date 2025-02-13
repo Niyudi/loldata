@@ -10,8 +10,6 @@ from db_models.static import Ranks, Roles
 
 from constants import CALL_INTERVAL, DEFAULT_RETRIES, DEFAULT_RETRY_INTERVAL, RIOT_API_KEY
 
-HEADERS = { 'X-Riot-Token': RIOT_API_KEY }
-
 last_call: datetime = datetime.now()
 
 
@@ -30,8 +28,8 @@ class Request:
 def handle_request(request: Request) -> dict[str, Any]:
     match request.type:
         case RequestType.GET_RANK:
-            json = time_get_request(f'https://br1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{request.params["riot_id"]}', headers=HEADERS)
-            json = time_get_request(f'https://br1.api.riotgames.com/lol/league/v4/entries/by-summoner/{json["id"]}', headers=HEADERS)
+            json = time_get_request(f'https://br1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{request.params["riot_id"]}')
+            json = time_get_request(f'https://br1.api.riotgames.com/lol/league/v4/entries/by-summoner/{json["id"]}')
 
             rank = Ranks.UNRANKED
             lp = None
@@ -58,12 +56,46 @@ def handle_request(request: Request) -> dict[str, Any]:
             is_blue_win: bool = (None if bool(json['info']['participants'][0]['gameEndedInEarlySurrender']) else
                 bool(json['info']['participants'][0]['win']) if json['info']['participants'][0]['teamId'] == '100' else
                 not bool(json['info']['participants'][0]['win']))
-            players = [{
-                'puuid': entry['puuid'],
-                'champion_name': entry['champion_name'],
-                'role': Roles.from_riot_str(entry['teamPosition']),
-                'is_blue_team': entry['teamId'] == '100',
-            } for entry in json['info']['participants']]
+            
+            players = None
+            if is_blue_win is not None:
+                players = []
+                missing_role_index = -1
+                missing_role_is_blue = False
+                for i, entry in enumerate(json['info']['participants']):
+                    is_blue_team = entry['teamId'] == '100'
+                    if entry['teamPosition'] == '':
+                        if missing_role_index > -1:
+                            missing_role_index = 10
+                            break
+                        else:
+                            missing_role_index = i
+                            missing_role_is_blue = is_blue_team
+                        players.append({
+                            'puuid': entry['puuid'],
+                            'champion_name': entry['championName'],
+                            'is_blue_team': is_blue_team,
+                        })
+                    else:
+                        players.append({
+                            'puuid': entry['puuid'],
+                            'champion_name': entry['championName'],
+                            'role': Roles.from_riot_str(entry['teamPosition']),
+                            'is_blue_team': entry['teamId'] == '100',
+                        })
+            
+                if missing_role_index == 10:
+                    players = None
+                    is_blue_win = None
+                elif missing_role_index > -1:
+                    possible_roles = {Roles.Top, Roles.Jungle, Roles.Mid, Roles.Bot, Roles.Support}
+                    for i in range(10):
+                        if i != missing_role_index:
+                            if players[i]['is_blue_team'] == missing_role_is_blue:
+                                possible_roles.remove(players[i]['role'])
+                                if len(possible_roles) == 1:
+                                    players[missing_role_index]['role'] = possible_roles.pop()
+                                    break
 
             return {
                 'region': region,
@@ -76,14 +108,14 @@ def handle_request(request: Request) -> dict[str, Any]:
             }
 
 
-def time_get_request(*args, **kwargs):
+def time_get_request(url: str):
     global last_call
 
     delta = (CALL_INTERVAL - (datetime.now() - last_call)).total_seconds()
     if delta > 0:
         sleep(delta)
     
-    req = requests.get(*args, **kwargs)
+    req = requests.get(url, headers={ 'X-Riot-Token': RIOT_API_KEY })
     last_call = datetime.now()
     i = 1
 
@@ -99,7 +131,7 @@ def time_get_request(*args, **kwargs):
         else:
             req.raise_for_status()
         
-        req = requests.get(*args, **kwargs)
+        req = requests.get(url, headers={ 'X-Riot-Token': RIOT_API_KEY })
         last_call = datetime.now()
         i += 1
 

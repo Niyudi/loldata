@@ -17,7 +17,7 @@ def init():
 def info(text: str, on_console: bool = True):
     global file_name
 
-    text = f'[{datetime.datetime.now().isoformat()}]: {text}\n'
+    text = f'[INFO][{datetime.datetime.now().isoformat()}]: {text}\n'
     with open(file_name, 'a') as file:
         file.write(text)
     

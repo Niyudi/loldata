@@ -30,7 +30,6 @@ def main():
             requests.put_nowait(Request(RequestType.GET_RANK, id=id, riot_id=riot_id))
             while requests.qsize() > 0:
                 request = requests.get_nowait()
-                print(request.type)
                 result = handle_request(request)
 
                 match request.type:
@@ -44,7 +43,7 @@ def main():
                         session.execute(stmt)
                         session.commit()
 
-                        if Ranks[result['rank']] >= Ranks.EMERALDIV:
+                        if result['rank'] >= Ranks.EMERALDIV:
                             requests.put_nowait(Request(RequestType.GET_MATCH_LIST, riot_id=riot_id))
                     case RequestType.GET_MATCH_LIST:
                         for entry in result:

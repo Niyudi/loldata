@@ -35,7 +35,7 @@ def handle_request(request: Request) -> dict[str, Any]:
             lp = None
             for entry in json:
                 if entry['queueType'] == 'RANKED_SOLO_5x5':
-                    rank = f'{entry["tier"]}{entry["rank"]}'
+                    rank = Ranks[f'{entry["tier"]}{entry["rank"]}']
                     lp = int(entry['leaguePoints'])
                     break
             

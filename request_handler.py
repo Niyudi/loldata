@@ -7,6 +7,8 @@ from typing import Any
 
 from db_models.static import Ranks, Regions, Roles
 
+import logger
+
 from constants import CALL_INTERVAL, DEFAULT_RETRIES, DEFAULT_RETRY_INTERVAL, RIOT_API_KEY
 
 last_call: datetime = datetime.now()
@@ -27,16 +29,20 @@ class Request:
 def handle_request(request: Request) -> dict[str, Any]:
     match request.type:
         case RequestType.GET_RANK:
+            logger.info(f'Received GET_RANK request for riot id "{request.params["riot_id"]}".')
+
             json = time_get_request(f'https://br1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{request.params["riot_id"]}')
             json = time_get_request(f'https://br1.api.riotgames.com/lol/league/v4/entries/by-summoner/{json["id"]}')
 
-            rank = Ranks.UNRANKED
+            rank = 'UNRANKED'
             lp = None
             for entry in json:
                 if entry['queueType'] == 'RANKED_SOLO_5x5':
                     rank = Ranks[f'{entry["tier"]}{entry["rank"]}']
                     lp = int(entry['leaguePoints'])
                     break
+
+            logger.info(f'GET_RANK fetched rank {rank.name} for riot id "{request.params["riot_id"]}".')
             
             return {
                 'player_id': request.params["id"],
@@ -44,11 +50,19 @@ def handle_request(request: Request) -> dict[str, Any]:
                 'lp': lp,
             }
         case RequestType.GET_MATCH_LIST:
+            logger.info(f'Received GET_MATCH_LIST request for riot id "{request.params["riot_id"]}".')
+
             now = int(time())
-            return time_get_request('https://americas.api.riotgames.com/lol/match/v5/matches/by-puuid/'
+            result = time_get_request('https://americas.api.riotgames.com/lol/match/v5/matches/by-puuid/'
                                     f'{request.params["riot_id"]}/ids?startTime={now - 1209600}&endTime={now}'
                                     '&type=ranked&start=0&count=100')
+        
+            logger.info(f'GET_MATCH_LIST fetched {len(result)} matches for riot id "{request.params["riot_id"]}".')
+
+            return result
         case RequestType.GET_MATCH:
+            logger.info(f'Received GET_MATCH request for match id "{request.params["id"]}".')
+
             json = time_get_request(f'https://americas.api.riotgames.com/lol/match/v5/matches/{request.params["id"]}')
 
             region, id = json['metadata']['matchId'].split('_')
@@ -86,6 +100,7 @@ def handle_request(request: Request) -> dict[str, Any]:
                 if missing_role_index == 10:
                     players = None
                     is_blue_win = None
+                    logger.info('GET_MATCH fetched match with undetermined roles, registering as invalid...')
                 elif missing_role_index > -1:
                     possible_roles = {Roles.Top, Roles.Jungle, Roles.Mid, Roles.Bot, Roles.Support}
                     for i in range(10):
@@ -95,6 +110,10 @@ def handle_request(request: Request) -> dict[str, Any]:
                                 if len(possible_roles) == 1:
                                     players[missing_role_index]['role'] = possible_roles.pop()
                                     break
+            else:
+                logger.info('GET_MATCH fetched invalid match...')
+
+            logger.info(f'GET_MATCH fetched match with id "{request.params["id"]}".')
 
             return {
                 'region': Regions[region],

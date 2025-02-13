@@ -39,11 +39,11 @@ DECLARE
     player_count smallint := 0;
     must_check boolean := false;
 BEGIN
-    IF TG_OP = 'INSERT' THEN
+    IF TG_OP = 'INSERT' AND NEW.is_blue_win IS NOT NULL THEN
         must_check := true;
     END IF;
 
-    IF TG_OP = 'UPDATE' THEN
+    IF TG_OP = 'UPDATE' AND NEW.is_blue_win IS NOT NULL THEN
         IF (NEW.region != OLD.region OR NEW.id != OLD.id) THEN
             must_check := true;
         END IF;

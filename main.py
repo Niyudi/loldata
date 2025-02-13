@@ -11,15 +11,15 @@ from request_handler import handle_request, Request, RequestType
 
 
 def main():
-    engine = create_engine('postgresql://postgres:1408@localhost:5432/postgres')
+    engine = create_engine('postgresql://avnadmin:AVNS_O2iqSXw8Fkq1rn2Ycoc@pg-loldata-loldata.e.aivencloud.com:13374/defaultdb?sslmode=require')
 
     with Session(engine) as session:
-        players: Queue[str] = initial_players(session)
+        players: Queue[tuple[int, str]] = initial_players(session)
         requests: Queue[Request] = Queue()
 
         while players.qsize() > 0:
-            player_id = players.get_nowait()
-            requests.put_nowait(Request(RequestType.GET_RANK, id=player_id))
+            id, riot_id = players.get_nowait()
+            requests.put_nowait(Request(RequestType.GET_RANK, id=id, riot_id=riot_id))
             while requests.qsize() > 0:
                 request = requests.get_nowait()
                 result = handle_request(request)
@@ -29,14 +29,14 @@ def main():
                         stmt = (insert(PlayerRanks)
                                 .values(result)
                                 .on_conflict_do_update(index_elements=[PlayerRanks.player_id],
-                                                    set_={PlayerRanks.rank: result['rank'],
-                                                            PlayerRanks.lp: result['lp'],
-                                                            PlayerRanks.last_update: func.current_timestamp()}))
+                                                       set_={PlayerRanks.rank: result['rank'],
+                                                             PlayerRanks.lp: result['lp'],
+                                                             PlayerRanks.last_update: func.current_timestamp()}))
                         session.execute(stmt)
                         session.commit()
 
-                        if result['rank'] >= Ranks.EMERALDIV:
-                            requests.put_nowait(Request(RequestType.GET_MATCH_LIST, id=player_id))
+                        if Ranks[result['rank']] >= Ranks.EMERALDIV:
+                            requests.put_nowait(Request(RequestType.GET_MATCH_LIST, riot_id=riot_id))
                     case RequestType.GET_MATCH_LIST:
                         for entry in result:
                             requests.put_nowait(Request(RequestType.GET_MATCH, id=entry))

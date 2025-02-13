@@ -30,7 +30,7 @@ class Request:
 def handle_request(request: Request) -> dict[str, Any]:
     match request.type:
         case RequestType.GET_RANK:
-            json = time_get_request(f'https://br1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{request.params["id"]}', headers=HEADERS)
+            json = time_get_request(f'https://br1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{request.params["riot_id"]}', headers=HEADERS)
             json = time_get_request(f'https://br1.api.riotgames.com/lol/league/v4/entries/by-summoner/{json["id"]}', headers=HEADERS)
 
             rank = Ranks.UNRANKED
@@ -49,7 +49,7 @@ def handle_request(request: Request) -> dict[str, Any]:
         case RequestType.GET_MATCH_LIST:
             now = int(time())
             return time_get_request('https://americas.api.riotgames.com/lol/match/v5/matches/by-puuid/'
-                                    f'{request.params["id"]}/ids?startTime={now - 1209600}&endTime={now}'
+                                    f'{request.params["riot_id"]}/ids?startTime={now - 1209600}&endTime={now}'
                                     '&type=ranked&start=0&count=100')
         case RequestType.GET_MATCH:
             json = time_get_request(f'https://americas.api.riotgames.com/lol/match/v5/matches/{request.params["id"]}')
@@ -79,7 +79,9 @@ def handle_request(request: Request) -> dict[str, Any]:
 def time_get_request(*args, **kwargs):
     global last_call
 
-    sleep((CALL_INTERVAL - (datetime.now() - last_call)).total_seconds())
+    delta = (CALL_INTERVAL - (datetime.now() - last_call)).total_seconds()
+    if delta > 0:
+        sleep(delta)
     
     req = requests.get(*args, **kwargs)
     last_call = datetime.now()

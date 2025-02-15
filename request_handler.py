@@ -1,7 +1,7 @@
 import requests
 
 from datetime import datetime
-from enum import Enum
+from enum import auto, Enum
 from time import sleep, time
 from typing import Any
 
@@ -9,61 +9,38 @@ from db_models.static import Ranks, Regions, Roles
 
 import logger
 
-from constants import CALL_INTERVAL, DEFAULT_RETRIES, DEFAULT_RETRY_INTERVAL, RIOT_API_KEY
+from constants import CALL_INTERVAL, DEFAULT_RETRIES, DEFAULT_RETRY_INTERVAL, MAX_TIMEOUTS, RIOT_API_KEY
 
 last_call: datetime = datetime.now()
+timeouts: int = 0
+
+
+type Json = dict[str, Any] | list[Any]
 
 
 class RequestType(Enum):
-    GET_RANK = 1
-    GET_MATCH_LIST = 2
-    GET_MATCH = 3
+    GET_MATCH = auto()
+    GET_MATCH_LIST = auto()
+    GET_PLAYER = auto()
+    GET_RANK = auto()
 
 
 class Request:
     def __init__(self, type: RequestType, **kwargs):
         self.type: RequestType = type
-        self.params: dict[str, str] = kwargs
+        self._params: dict[str, str] = kwargs
+    
+
+    def __getitem__(self, key: str):
+        return self._params[key]
 
 
-def handle_request(request: Request) -> dict[str, Any]:
+def handle_request(request: Request) -> Json:
     match request.type:
-        case RequestType.GET_RANK:
-            logger.info(f'Received GET_RANK request for riot id "{request.params["riot_id"]}".')
-
-            json = time_get_request(f'https://br1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{request.params["riot_id"]}')
-            json = time_get_request(f'https://br1.api.riotgames.com/lol/league/v4/entries/by-summoner/{json["id"]}')
-
-            rank = 'UNRANKED'
-            lp = None
-            for entry in json:
-                if entry['queueType'] == 'RANKED_SOLO_5x5':
-                    rank = Ranks[f'{entry["tier"]}{entry["rank"]}']
-                    lp = int(entry['leaguePoints'])
-                    break
-
-            logger.info(f'GET_RANK fetched rank {rank.name} for riot id "{request.params["riot_id"]}".')
-            
-            return {
-                'player_id': request.params["id"],
-                'rank': rank,
-                'lp': lp,
-            }
-        case RequestType.GET_MATCH_LIST:
-            logger.info(f'Received GET_MATCH_LIST request for riot id "{request.params["riot_id"]}".')
-
-            now = int(time())
-            result = time_get_request('https://americas.api.riotgames.com/lol/match/v5/matches/by-puuid/'
-                                    f'{request.params["riot_id"]}/ids?startTime={now - 1209600}&endTime={now}'
-                                    '&type=ranked&start=0&count=100')
-        
-            logger.info(f'GET_MATCH_LIST fetched {len(result)} matches for riot id "{request.params["riot_id"]}".')
-
-            return result
         case RequestType.GET_MATCH:
-            logger.info(f'Received GET_MATCH request for match id "{request.params["id"]}".')
+            logger.info(f'Received GET_MATCH request for match id "{request["riot_match_id"]}".')
 
-            json = time_get_request(f'https://americas.api.riotgames.com/lol/match/v5/matches/{request.params["id"]}')
+            json = time_get_request(f'https://americas.api.riotgames.com/lol/match/v5/matches/{request["riot_match_id"]}')
 
             region, id = json['metadata']['matchId'].split('_')
             is_blue_win: bool = (None if bool(json['info']['participants'][0]['gameEndedInEarlySurrender']) else
@@ -113,7 +90,7 @@ def handle_request(request: Request) -> dict[str, Any]:
             else:
                 logger.info('GET_MATCH fetched invalid match...')
 
-            logger.info(f'GET_MATCH fetched match with id "{request.params["id"]}".')
+            logger.info(f'GET_MATCH fetched match with id "{request["riot_match_id"]}".')
 
             return {
                 'region': Regions[region],
@@ -124,10 +101,55 @@ def handle_request(request: Request) -> dict[str, Any]:
                 'is_blue_win': is_blue_win,
                 'players': players,
             }
+        case RequestType.GET_MATCH_LIST:
+            logger.info(f'Received GET_MATCH_LIST request for riot id "{request["riot_id"]}".')
+
+            now = int(time())
+            result = time_get_request('https://americas.api.riotgames.com/lol/match/v5/matches/by-puuid/'
+                                    f'{request["riot_id"]}/ids?startTime={now - 1209600}&endTime={now}'
+                                    '&type=ranked&start=0&count=100')
+        
+            logger.info(f'GET_MATCH_LIST fetched {len(result)} matches for riot id "{request["riot_id"]}".')
+
+            return result
+        case RequestType.GET_PLAYER:
+            logger.info(f'Received GET_PLAYER request for riot id "{request["riot_id"]}".')
+
+            json = time_get_request(f'https://americas.api.riotgames.com/riot/account/v1/accounts/by-puuid/{request["riot_id"]}')
+
+            logger.info(f'GET_PLAYER fetched player name "{json["gameName"]}#{json["tagLine"]}" for riot id "{request["riot_id"]}".')
+
+            return {
+                'riot_id': request["riot_id"],
+                'name': json['gameName'],
+                'tag': json['tagLine'],
+            }
+        case RequestType.GET_RANK:
+            logger.info(f'Received GET_RANK request for riot id "{request["riot_id"]}".')
+
+            json = time_get_request(f'https://br1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{request["riot_id"]}')
+            json = time_get_request(f'https://br1.api.riotgames.com/lol/league/v4/entries/by-summoner/{json["id"]}')
+
+            rank = Ranks['UNRANKED']
+            lp = None
+            for entry in json:
+                if entry['queueType'] == 'RANKED_SOLO_5x5':
+                    rank = Ranks[f'{entry["tier"]}{entry["rank"]}']
+                    lp = int(entry['leaguePoints'])
+                    break
+
+            logger.info(f'GET_RANK fetched rank {rank.name} for riot id "{request["riot_id"]}".')
+            
+            return {
+                'player_id': request["player_id"],
+                'rank': rank,
+                'lp': lp,
+            }
 
 
-def time_get_request(url: str):
+def time_get_request(url: str) -> Json:
     global last_call
+    global timeouts
 
     delta = (CALL_INTERVAL - (datetime.now() - last_call)).total_seconds()
     if delta > 0:
@@ -142,6 +164,10 @@ def time_get_request(url: str):
             req.raise_for_status()
         
         if req.status_code == 429:
+            timeouts += 1
+            if timeouts == MAX_TIMEOUTS:
+                raise Exception(f'Maximum number of timeouts ({MAX_TIMEOUTS}) reached!')
+
             if 'Retry-After' in req.headers:
                 sleep(float(req.headers['Retry-After']))
             else:

@@ -27,6 +27,7 @@ def initial_players(session: Session, rank_cooldown: int = 2) -> Queue[str]:
         logger.info(f'Fetched {queue.qsize()} players for initial search.')
         return queue
     
+    logger.info(f'No candidates found!')
     # Second, try players who have not had their ranks checked in the last rank_cooldown days
     logger.info(f'Fetching from database players with ranks registered more than {rank_cooldown} days ago...')
     # TODO

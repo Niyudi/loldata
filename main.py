@@ -1,9 +1,11 @@
 import pandas
 
+from enum import auto, Enum
 from queue import Queue
 from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 from sqlalchemy.dialects.postgresql import insert
+from typing import Any
 
 from db_models.registry import Matches, MatchPlayers, Players
 from db_models.search import PlayerRanks
@@ -11,47 +13,54 @@ from db_models.static import Champions, Ranks
 
 import logger
 
+from constants import DB_URI
 from initial_players import initial_players
 from request_handler import handle_request, Request, RequestType
+
+
+class OperationType(Enum):
+    FETCH_MATCH_LIST = auto()
+    REGISTER_MATCH = auto()
+    REGISTER_RANK = auto()
+
+
+class Operation:
+    def __init__(self, type: OperationType, **kwargs):
+        self.type: OperationType = type
+        self._params: dict[str, Any] = kwargs
+    
+    
+    def __getitem__(self, key: str):
+        return self._params[key]
 
 
 def main():
     logger.init()
     try:
-        engine = create_engine('postgresql://avnadmin:AVNS_O2iqSXw8Fkq1rn2Ycoc@pg-loldata-loldata.e.aivencloud.com:13374/defaultdb?sslmode=require')
+        engine = create_engine(DB_URI)
 
         with Session(engine) as session:
             df_champions = pandas.read_sql(select(Champions), session.connection())
 
             players: Queue[tuple[int, str]] = initial_players(session)
-            requests: Queue[Request] = Queue()
+            operations: Queue[Operation] = Queue()
 
             while players.qsize() > 0:
-                id, riot_id = players.get_nowait()
-                requests.put_nowait(Request(RequestType.GET_RANK, id=id, riot_id=riot_id))
-                while requests.qsize() > 0:
-                    request = requests.get_nowait()
-                    result = handle_request(request)
+                player_id, riot_id = players.get_nowait()
+                operations.put_nowait(Operation(OperationType.REGISTER_RANK))
 
-                    match request.type:
-                        case RequestType.GET_RANK:
-                            stmt = (insert(PlayerRanks)
-                                    .values(result)
-                                    .on_conflict_do_update(index_elements=[PlayerRanks.player_id],
-                                                        set_={PlayerRanks.rank: result['rank'],
-                                                                PlayerRanks.lp: result['lp'],
-                                                                PlayerRanks.last_update: func.current_timestamp()}))
-                            session.execute(stmt)
-                            session.commit()
+                while operations.qsize() > 0:
+                    operation = operations.get_nowait()
+                    match operation.type:
+                        case OperationType.FETCH_MATCH_LIST:
+                            result = handle_request(Request(RequestType.GET_MATCH_LIST, riot_id=riot_id))
+                            
+                            for riot_match_id in result:
+                                operations.put_nowait(Operation(OperationType.REGISTER_MATCH, riot_match_id=riot_match_id))
+                        case OperationType.REGISTER_MATCH:
+                            result = handle_request(Request(RequestType.GET_MATCH, riot_match_id=operation['riot_match_id']))
 
-                            if result['rank'] >= Ranks.EMERALDIV:
-                                requests.put_nowait(Request(RequestType.GET_MATCH_LIST, riot_id=riot_id))
-                        case RequestType.GET_MATCH_LIST:
-                            for entry in result:
-                                requests.put_nowait(Request(RequestType.GET_MATCH, id=entry))
-                        case RequestType.GET_MATCH:
                             match_players = result.pop('players')
-
                             stmt = (insert(Matches)
                                     .values(result)
                                     .on_conflict_do_nothing())
@@ -59,21 +68,29 @@ def main():
                             if rowcount == 0 or result['is_blue_win'] is None:
                                 session.commit()
                                 continue
-
+                            
                             for i in range(len(match_players)):
                                 # Adds match info to players
                                 match_players[i]['region'] = result['region']
                                 match_players[i]['match_id'] = result['id']
 
                                 # Player registry
-                                stmt = (select(Players)
+                                stmt = (select(Players.id)
                                         .where(Players.riot_id == match_players[i]['puuid']))
                                 df = pandas.read_sql(stmt, session.connection())
 
                                 if len(df.index) == 0:
-                                    asdasdgga
-                                    # TODO GET_PLAYER request and db registry
-                                    pass
+                                    player_result = handle_request(Request(RequestType.GET_PLAYER, riot_id=match_players[i]['puuid']))
+                                    stmt = (insert(Players)
+                                            .values(player_result))
+                                    session.execute(stmt)
+
+                                    stmt = (select(Players.id)
+                                        .where(Players.riot_id == match_players[i]['puuid']))
+                                    df = pandas.read_sql(stmt, session.connection())
+                                
+                                match_players[i].pop('puuid')
+                                match_players[i]['player_id'] = int(df['id'].iloc[0])
 
                                 # Champion regsitry
                                 df = df_champions[df_champions['name'] == match_players[i]['champion_name']]
@@ -86,12 +103,28 @@ def main():
                                     df = df_champions[df_champions['name'] == match_players[i]['champion_name']]
                                 
                                 match_players[i].pop('champion_name')
-                                match_players[i]['champion_id'] = df['id'].first()
+                                match_players[i]['champion_id'] = int(df['id'].iloc[0])
                             
+                            print(match_players)
+
                             stmt = (insert(MatchPlayers)
                                     .values(match_players))
                             session.execute(stmt)
                             session.commit()
+                        case OperationType.REGISTER_RANK:
+                            result = handle_request(Request(RequestType.GET_RANK, player_id=player_id, riot_id=riot_id))
+
+                            stmt = (insert(PlayerRanks)
+                                    .values(result)
+                                    .on_conflict_do_update(index_elements=[PlayerRanks.player_id],
+                                                        set_={PlayerRanks.rank: result['rank'],
+                                                                PlayerRanks.lp: result['lp'],
+                                                                PlayerRanks.last_update: func.current_timestamp()}))
+                            session.execute(stmt)
+                            session.commit()
+
+                            if result['rank'] >= Ranks.EMERALDIV:
+                                operations.put_nowait(Operation(OperationType.FETCH_MATCH_LIST))
     except Exception as e:
         logger.error(f'{type(e).__name__}: {str(e)}', on_console=False)
         raise e

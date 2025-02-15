@@ -8,7 +8,7 @@ def error(text: str, on_console: bool = True):
     global file_path
 
     text = f'[ERROR][{datetime.datetime.now().isoformat()}]: {text}\n'
-    with open(file_path, 'a') as file:
+    with open(file_path, 'a', encoding='utf-8') as file:
         file.write(text)
     
     if on_console:
@@ -22,7 +22,7 @@ def init():
 
     start_time = datetime.datetime.now().isoformat()
     file_path = os.path.normpath(f'logs/{start_time}.log'.replace(':', ''))
-    with open(file_path, 'w') as file:
+    with open(file_path, 'w', encoding='utf-8') as file:
         file.write(f'[INFO][{start_time}]: Logger started!\n')
 
 
@@ -30,7 +30,7 @@ def info(text: str, on_console: bool = True):
     global file_path
 
     text = f'[INFO][{datetime.datetime.now().isoformat()}]: {text}\n'
-    with open(file_path, 'a') as file:
+    with open(file_path, 'a', encoding='utf-8') as file:
         file.write(text)
     
     if on_console:
@@ -41,7 +41,7 @@ def warning(text: str, on_console: bool = True):
     global file_path
 
     text = f'[WARNING][{datetime.datetime.now().isoformat()}]: {text}\n'
-    with open(file_path, 'a') as file:
+    with open(file_path, 'a', encoding='utf-8') as file:
         file.write(text)
     
     if on_console:

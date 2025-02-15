@@ -104,8 +104,6 @@ def main():
                                 
                                 match_players[i].pop('champion_name')
                                 match_players[i]['champion_id'] = int(df['id'].iloc[0])
-                            
-                            print(match_players)
 
                             stmt = (insert(MatchPlayers)
                                     .values(match_players))

@@ -53,7 +53,7 @@ def handle_request(request: Request) -> Json:
                 missing_role_index = -1
                 missing_role_is_blue = False
                 for i, entry in enumerate(json['info']['participants']):
-                    is_blue_team = entry['teamId'] == '100'
+                    is_blue_team = entry['teamId'] == 100
                     if entry['teamPosition'] == '':
                         if missing_role_index > -1:
                             missing_role_index = 10
@@ -71,7 +71,7 @@ def handle_request(request: Request) -> Json:
                             'puuid': entry['puuid'],
                             'champion_name': entry['championName'],
                             'role': Roles.from_riot_str(entry['teamPosition']),
-                            'is_blue_team': entry['teamId'] == '100',
+                            'is_blue_team': is_blue_team,
                         })
             
                 if missing_role_index == 10:

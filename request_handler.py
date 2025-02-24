@@ -169,9 +169,11 @@ def time_get_request(url: str) -> Json:
                 raise Exception(f'Maximum number of timeouts ({MAX_TIMEOUTS}) reached!')
 
             if 'Retry-After' in req.headers:
-                sleep(float(req.headers['Retry-After']))
+                sleep_interval = float(req.headers['Retry-After'])
             else:
-                sleep(DEFAULT_RETRY_INTERVAL)
+                sleep_interval = DEFAULT_RETRY_INTERVAL
+            logger.warning(f'Timeout happened! Waiting for {sleep_interval:.01} seconds.')
+            sleep(sleep_interval)
         else:
             req.raise_for_status()
         

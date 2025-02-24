@@ -43,10 +43,14 @@ def main():
         with Session(engine) as session:
             df_champions = pandas.read_sql(select(Champions), session.connection())
 
-            players, players_set = initial_players(session)
+            players: Queue[tuple[int, str]] = Queue(50)
+            players_set: set[str] = {}
             operations: Queue[Operation] = Queue()
 
-            while players.qsize() > 0:
+            while True:
+                if players.qsize() == 0:
+                    players, players_set = initial_players(session)
+                
                 player_id, riot_id = players.get_nowait()
                 players_set.remove(riot_id)
                 operations.put_nowait(Operation(OperationType.REGISTER_RANK))
@@ -70,7 +74,7 @@ def main():
                                     .values(result)
                                     .on_conflict_do_nothing())
                             rowcount = session.execute(stmt).rowcount
-                            logger.info(f'Inserting match with id {result["region"]}{result["id"]} into database.')
+                            logger.info(f'Inserting match with id {result["region"].name}_{result["id"]} into database.')
                             if rowcount == 0:
                                 session.commit()
                                 logger.info('Match already in databse! Skipping...')
@@ -104,7 +108,7 @@ def main():
                                     df['rank'] = None
                                     df['last_update'] = None
                                 
-                                if match_players[i]['puuid'] not in players_set and (df['rank'].iloc[0] is None or datetime.now().astimezone() - df['last_update'].iloc[0] >= RANK_COOLDOWN):
+                                if not players.full() and match_players[i]['puuid'] not in players_set and (df['rank'].iloc[0] is None or datetime.now().astimezone() - df['last_update'].iloc[0] >= RANK_COOLDOWN):
                                     players.put_nowait((int(df['id'].iloc[0]), match_players[i]['puuid']))
                                     players_set.add(match_players[i]['puuid'])
                                     logger.info(f'Player with id {df["id"].iloc[0]} rank check has expired! Placed in queue for recheck,')

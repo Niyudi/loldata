@@ -2,6 +2,7 @@ import requests
 
 from datetime import datetime
 from enum import auto, Enum
+from queue import Queue
 from time import sleep, time
 from typing import Any
 
@@ -9,10 +10,13 @@ from db_models.static import Ranks, Regions, Roles
 
 import logger
 
-from constants import CALL_INTERVAL, DEFAULT_RETRIES, DEFAULT_RETRY_INTERVAL, MAX_TIMEOUTS, RIOT_API_KEY
+from constants import CALL_INTERVAL, DEFAULT_RETRIES, DEFAULT_RETRY_INTERVAL, MAX_TIMEOUTS_PER_WINDOW, RIOT_API_KEY, TIMEOUT_WINDOW_SIZE
 
 last_call: datetime = datetime.now()
-timeouts: int = 0
+timeout_queue: Queue[bool] = Queue(TIMEOUT_WINDOW_SIZE)
+for _ in range(MAX_TIMEOUTS_PER_WINDOW):
+    timeout_queue.put_nowait(False)
+timeout_count: int = 0
 
 
 type Json = dict[str, Any] | list[Any]
@@ -149,7 +153,8 @@ def handle_request(request: Request) -> Json:
 
 def time_get_request(url: str) -> Json:
     global last_call
-    global timeouts
+    global timeout_queue
+    global timeout_count
 
     delta = (CALL_INTERVAL - (datetime.now() - last_call)).total_seconds()
     if delta > 0:
@@ -157,16 +162,20 @@ def time_get_request(url: str) -> Json:
     
     req = requests.get(url, headers={ 'X-Riot-Token': RIOT_API_KEY })
     last_call = datetime.now()
-    i = 1
+    if timeout_queue.get_nowait():
+        timeout_count -= 1
 
+    i = 1
     while not req.ok:
         if i > DEFAULT_RETRIES:
             req.raise_for_status()
         
         if req.status_code == 429:
-            timeouts += 1
-            if timeouts == MAX_TIMEOUTS:
-                raise Exception(f'Maximum number of timeouts ({MAX_TIMEOUTS}) reached!')
+            timeout_queue.put_nowait(True)
+            timeout_count += 1
+
+            if timeout_count == MAX_TIMEOUTS_PER_WINDOW:
+                raise Exception(f'Maximum timeout rate ({MAX_TIMEOUTS_PER_WINDOW}/{TIMEOUT_WINDOW_SIZE}) reached!')
 
             if 'Retry-After' in req.headers:
                 sleep_interval = float(req.headers['Retry-After'])
@@ -179,6 +188,11 @@ def time_get_request(url: str) -> Json:
         
         req = requests.get(url, headers={ 'X-Riot-Token': RIOT_API_KEY })
         last_call = datetime.now()
+        if timeout_queue.get_nowait():
+            timeout_count -= 1
+
         i += 1
+    
+    timeout_queue.put_nowait(False)
 
     return req.json()

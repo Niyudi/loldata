@@ -172,8 +172,8 @@ def time_get_request(url: str) -> Json:
                 sleep_interval = float(req.headers['Retry-After'])
             else:
                 sleep_interval = DEFAULT_RETRY_INTERVAL
-            logger.warning(f'Timeout happened! Waiting for {sleep_interval:.01} seconds.')
-            sleep(sleep_interval)
+            logger.warning(f'Timeout happened! Waiting for {sleep_interval:.01f} seconds.')
+            sleep(sleep_interval) 
         else:
             req.raise_for_status()
         

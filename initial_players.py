@@ -32,4 +32,5 @@ def initial_players(session: Session, rank_cooldown: int = 2) -> Queue[str]:
     logger.info(f'Fetching from database players with ranks registered more than {rank_cooldown} days ago...')
     # TODO
 
+    logger.info(f'No candidates found!')
     raise Exception('No intial player candidates available in database!')

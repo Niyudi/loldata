@@ -95,11 +95,11 @@ def handle_request(request: Request) -> Json:
                 logger.info('GET_MATCH fetched invalid match...')
 
             logger.info(f'GET_MATCH fetched match with id "{request["riot_match_id"]}".')
-
+            
             return {
                 'region': Regions[region],
                 'id': int(id),
-                'patch': int('{:02}{:02}'.format(*json['info']['gameVersion'].split('.')[:2])),
+                'patch': int('{:02}{:02}'.format(*(int(x) for x in json['info']['gameVersion'].split('.')[:2]))),
                 'time': int(json['info']['gameStartTimestamp']),
                 'duration': int(json['info']['gameDuration']),
                 'is_blue_win': is_blue_win,

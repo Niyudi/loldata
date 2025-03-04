@@ -73,8 +73,3 @@ CREATE CONSTRAINT TRIGGER enforce_valid_matches
     AFTER INSERT OR UPDATE ON registry.matches
 	DEFERRABLE INITIALLY DEFERRED
     FOR EACH ROW EXECUTE FUNCTION registry.enforce_valid_matches();
-
-INSERT INTO registry.players (riot_id, "name", tag) VALUES
-	('swxjIq3XGhlaG1WS3fhzPp-cV_9iYpGNck-RMq5A4oR0_fXdzdOi0NsFAZ2OWeq-8uS2pXBJTnqdMg', 'Fitos', 'br1'),
-	('CvypDMumYWopSOfoONGv63QnZ_YrRVs0KVwA-6yuCHTIi9paho-KCy2Uc7YN3kTOpf4b_sUi6wTVRg', 'Morttheus', 'BR1');
-	

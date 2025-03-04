@@ -155,11 +155,6 @@ def main():
         logger.error(f'{type(e).__name__}: {str(e)}', on_console=False)
         raise e
 
-                            
-
-
-
-
 
 if __name__ == '__main__':
     main()

@@ -14,7 +14,7 @@ from db_models.static import Champions, Ranks
 
 import logger
 
-from constants import DB_URI, RANK_COOLDOWN
+from constants import DB_URI, PLAYER_QUEUE_SIZE, RANK_COOLDOWN
 from initial_players import initial_players
 from request_handler import handle_request, Request, RequestType
 
@@ -43,7 +43,7 @@ def main():
         with Session(engine) as session:
             df_champions = pandas.read_sql(select(Champions), session.connection())
 
-            players: Queue[tuple[int, str]] = Queue(50)
+            players: Queue[tuple[int, str]] = Queue(PLAYER_QUEUE_SIZE)
             players_set: set[str] = {}
             operations: Queue[Operation] = Queue()
 

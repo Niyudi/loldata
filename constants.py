@@ -4,6 +4,7 @@ CALL_INTERVAL: timedelta = timedelta(seconds=0.6)
 DEFAULT_RETRIES: int = 3
 DEFAULT_RETRY_INTERVAL: float = 10 # in seconds
 MAX_TIMEOUTS_PER_WINDOW: int = 3
+PLAYER_QUEUE_SIZE: int = 20
 RANK_COOLDOWN: timedelta = timedelta(days=3.0)
 TIMEOUT_WINDOW_SIZE: int = 200
 

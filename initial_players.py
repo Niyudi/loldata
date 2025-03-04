@@ -10,7 +10,7 @@ from db_models.search import PlayerRanks
 
 import logger
 
-from constants import RANK_COOLDOWN
+from constants import PLAYER_QUEUE_SIZE, RANK_COOLDOWN
 
 
 def initial_players(session: Session) -> tuple[Queue[tuple[int, str]], set[str]]:
@@ -20,11 +20,11 @@ def initial_players(session: Session) -> tuple[Queue[tuple[int, str]], set[str]]
     stmt = (select(Players.id, Players.riot_id)
             .join(PlayerRanks, Players.id == PlayerRanks.player_id, isouter=True)
             .where(PlayerRanks.rank.is_(None))
-            .limit(5))
+            .limit(literal(PLAYER_QUEUE_SIZE)))
     df = pandas.read_sql(stmt, session.connection())
 
     if len(df.index) > 0:
-        queue = Queue(50)
+        queue = Queue(PLAYER_QUEUE_SIZE)
         df.apply(lambda row: queue.put_nowait((row['id'], row['riot_id'])), axis=1)
 
         logger.info(f'Fetched {queue.qsize()} players for initial search.')
@@ -37,11 +37,11 @@ def initial_players(session: Session) -> tuple[Queue[tuple[int, str]], set[str]]
     stmt = (select(Players.id, Players.riot_id)
             .join(PlayerRanks, Players.id == PlayerRanks.player_id, isouter=True)
             .where(PlayerRanks.last_update < literal(datetime.now().astimezone() - RANK_COOLDOWN))
-            .limit(5))
+            .limit(literal(PLAYER_QUEUE_SIZE)))
     df = pandas.read_sql(stmt, session.connection())
 
     if len(df.index) > 0:
-        queue = Queue(50)
+        queue = Queue(PLAYER_QUEUE_SIZE)
         df.apply(lambda row: queue.put_nowait((row['id'], row['riot_id'])), axis=1)
 
         logger.info(f'Fetched {queue.qsize()} players for initial search.')

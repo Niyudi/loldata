@@ -10,16 +10,20 @@ from db_models.static import Ranks, Regions, Roles
 
 import logger
 
-from constants import CALL_INTERVAL, DEFAULT_RETRIES, DEFAULT_RETRY_INTERVAL, MAX_TIMEOUTS_PER_WINDOW, RIOT_API_KEY, TIMEOUT_WINDOW_SIZE
-
-last_call: datetime = datetime.now()
-timeout_queue: Queue[bool] = Queue(TIMEOUT_WINDOW_SIZE)
-for _ in range(MAX_TIMEOUTS_PER_WINDOW):
-    timeout_queue.put_nowait(False)
-timeout_count: int = 0
+from constants import CALL_INTERVAL, DEFAULT_RETRIES, DEFAULT_RETRY_INTERVAL, MAX_ERRORS_PER_WINDOW, MAX_TIMEOUTS_PER_WINDOW, RIOT_API_KEY, WINDOW_SIZE
 
 
 type Json = dict[str, Any] | list[Any]
+
+
+HEADERS: Json = { 'X-Riot-Token': RIOT_API_KEY }
+
+last_call: datetime = datetime.now()
+code_queue: Queue[int] = Queue(WINDOW_SIZE)
+for _ in range(WINDOW_SIZE):
+    code_queue.put_nowait(200)
+error_count: int = 0
+timeout_count: int = 0
 
 
 class RequestType(Enum):
@@ -152,47 +156,68 @@ def handle_request(request: Request) -> Json:
 
 
 def time_get_request(url: str) -> Json:
+    global HEADERS
+
     global last_call
-    global timeout_queue
+    global code_queue
+    global error_count
     global timeout_count
 
     delta = (CALL_INTERVAL - (datetime.now() - last_call)).total_seconds()
     if delta > 0:
         sleep(delta)
     
-    req = requests.get(url, headers={ 'X-Riot-Token': RIOT_API_KEY })
+    req = requests.get(url, headers=HEADERS)
     last_call = datetime.now()
-    if timeout_queue.get_nowait():
-        timeout_count -= 1
+    match code_queue.get_nowait():
+        case 200:
+            pass
+        case 429:
+            error_count -= 1
+            timeout_count -= 1
+        case _:
+            error_count -= 1
+    code_queue.put_nowait(req.status_code)
 
     i = 1
     while not req.ok:
         if i > DEFAULT_RETRIES:
+            logger.error(f'Maximum number of retries ({DEFAULT_RETRIES}) reached!')
             req.raise_for_status()
         
-        if req.status_code == 429:
-            timeout_queue.put_nowait(True)
-            timeout_count += 1
+        match req.status_code:
+            case 429:
+                error_count += 1
+                timeout_count += 1
 
-            if timeout_count == MAX_TIMEOUTS_PER_WINDOW:
-                raise Exception(f'Maximum timeout rate ({MAX_TIMEOUTS_PER_WINDOW}/{TIMEOUT_WINDOW_SIZE}) reached!')
+                if timeout_count == MAX_TIMEOUTS_PER_WINDOW:
+                    raise Exception(f'Maximum timeout rate ({MAX_TIMEOUTS_PER_WINDOW}/{WINDOW_SIZE}) reached!')
 
-            if 'Retry-After' in req.headers:
-                sleep_interval = float(req.headers['Retry-After'])
-            else:
-                sleep_interval = DEFAULT_RETRY_INTERVAL
-            logger.warning(f'Timeout happened! Waiting for {sleep_interval:.01f} seconds.')
-            sleep(sleep_interval) 
-        else:
-            req.raise_for_status()
+                if 'Retry-After' in req.headers:
+                    sleep_interval = float(req.headers['Retry-After'])
+                else:
+                    sleep_interval = DEFAULT_RETRY_INTERVAL
+                logger.warning(f'Timeout happened! Waiting for {sleep_interval:.01f} seconds.')
+                sleep(sleep_interval) 
+            case _:
+                error_count += 1
+
+                if error_count == MAX_ERRORS_PER_WINDOW:
+                    logger.error(f'Maximum error rate ({MAX_ERRORS_PER_WINDOW}/{WINDOW_SIZE}) reached!')
+                    req.raise_for_status()
         
-        req = requests.get(url, headers={ 'X-Riot-Token': RIOT_API_KEY })
+        req = requests.get(url, headers=HEADERS)
         last_call = datetime.now()
-        if timeout_queue.get_nowait():
-            timeout_count -= 1
+        match code_queue.get_nowait():
+            case 200:
+                pass
+            case 429:
+                error_count -= 1
+                timeout_count -= 1
+            case _:
+                error_count -= 1
+        code_queue.put_nowait(req.status_code)
 
         i += 1
-    
-    timeout_queue.put_nowait(False)
 
     return req.json()

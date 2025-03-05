@@ -210,6 +210,7 @@ def time_get_request(url: str) -> Json:
                 else:
                     sleep_interval = DEFAULT_RETRY_INTERVAL
                 logger.warning(f'Timeout happened! Waiting for {sleep_interval:.01f} seconds.')
+                
                 sleep(sleep_interval) 
             case _:
                 error_count += 1
@@ -222,6 +223,8 @@ def time_get_request(url: str) -> Json:
                     req.raise_for_status()
                 except requests.exceptions.HTTPError as e:
                     logger.warning(f'HTTP error: {str(e)}. Retrying...')
+                
+                sleep(DEFAULT_RETRY_INTERVAL)
         
         attempts = 0
         while True:

@@ -202,7 +202,8 @@ def time_get_request(url: str) -> Json:
                 timeout_count += 1
 
                 if timeout_count == MAX_TIMEOUTS_PER_WINDOW:
-                    raise Exception(f'Maximum timeout rate ({MAX_TIMEOUTS_PER_WINDOW}/{WINDOW_SIZE}) reached!')
+                    logger.error(f'Maximum timeout rate ({MAX_TIMEOUTS_PER_WINDOW}/{WINDOW_SIZE}) reached!')
+                    req.raise_for_status()
 
                 if 'Retry-After' in req.headers:
                     sleep_interval = float(req.headers['Retry-After'])
@@ -216,6 +217,11 @@ def time_get_request(url: str) -> Json:
                 if error_count == MAX_ERRORS_PER_WINDOW:
                     logger.error(f'Maximum error rate ({MAX_ERRORS_PER_WINDOW}/{WINDOW_SIZE}) reached!')
                     req.raise_for_status()
+                
+                try:
+                    req.raise_for_status()
+                except requests.exceptions.HTTPError as e:
+                    logger.warning(f'HTTP error: {str(e)}. Retrying...')
         
         attempts = 0
         while True:

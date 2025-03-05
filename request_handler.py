@@ -167,7 +167,18 @@ def time_get_request(url: str) -> Json:
     if delta > 0:
         sleep(delta)
     
-    req = requests.get(url, headers=HEADERS)
+    attempts = 0
+    while True:
+        attempts += 1
+        if attempts > 5:
+            req = requests.get(url, headers=HEADERS)
+            break
+        try:
+            req = requests.get(url, headers=HEADERS)
+            break
+        except requests.exceptions.ChunkedEncodingError:
+            sleep(1.0)
+
     last_call = datetime.now()
     match code_queue.get_nowait():
         case 200:
@@ -206,7 +217,18 @@ def time_get_request(url: str) -> Json:
                     logger.error(f'Maximum error rate ({MAX_ERRORS_PER_WINDOW}/{WINDOW_SIZE}) reached!')
                     req.raise_for_status()
         
-        req = requests.get(url, headers=HEADERS)
+        attempts = 0
+        while True:
+            attempts += 1
+            if attempts > 5:
+                req = requests.get(url, headers=HEADERS)
+                break
+            try:
+                req = requests.get(url, headers=HEADERS)
+                break
+            except requests.exceptions.ChunkedEncodingError:
+                sleep(1.0)
+        
         last_call = datetime.now()
         match code_queue.get_nowait():
             case 200:

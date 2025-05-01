@@ -1,19 +1,17 @@
-import requests
-
 from datetime import datetime
 from enum import auto, Enum
 from queue import Queue
 from time import sleep, time
 from typing import Any
 
-from db_models.static import Ranks, Regions, Roles
+import requests
 
 import logger
 
 from constants import CALL_INTERVAL, DEFAULT_RETRIES, DEFAULT_RETRY_INTERVAL, MAX_ERRORS_PER_WINDOW, MAX_TIMEOUTS_PER_WINDOW, RIOT_API_KEY, WINDOW_SIZE
+from db_models.static import Ranks, Regions, Roles
 
-
-type Json = dict[str, Any] | list[Any]
+type Json = Any # Redundant but shows intention plz don't remove thx
 
 
 HEADERS: Json = { 'X-Riot-Token': RIOT_API_KEY }
@@ -48,7 +46,7 @@ def handle_request(request: Request) -> Json:
         case RequestType.GET_MATCH:
             logger.info(f'Received GET_MATCH request for match id "{request["riot_match_id"]}".')
 
-            json = time_get_request(f'https://americas.api.riotgames.com/lol/match/v5/matches/{request["riot_match_id"]}')
+            json = _time_get_request(f'https://americas.api.riotgames.com/lol/match/v5/matches/{request["riot_match_id"]}')
 
             region, id = json['metadata']['matchId'].split('_')
             is_blue_win: bool = (None if bool(json['info']['participants'][0]['gameEndedInEarlySurrender']) else
@@ -113,7 +111,7 @@ def handle_request(request: Request) -> Json:
             logger.info(f'Received GET_MATCH_LIST request for riot id "{request["riot_id"]}".')
 
             now = int(time())
-            result = time_get_request('https://americas.api.riotgames.com/lol/match/v5/matches/by-puuid/'
+            result = _time_get_request('https://americas.api.riotgames.com/lol/match/v5/matches/by-puuid/'
                                     f'{request["riot_id"]}/ids?startTime={now - 1209600}&endTime={now}'
                                     '&type=ranked&start=0&count=100')
         
@@ -123,7 +121,7 @@ def handle_request(request: Request) -> Json:
         case RequestType.GET_PLAYER:
             logger.info(f'Received GET_PLAYER request for riot id "{request["riot_id"]}".')
 
-            json = time_get_request(f'https://americas.api.riotgames.com/riot/account/v1/accounts/by-puuid/{request["riot_id"]}')
+            json = _time_get_request(f'https://americas.api.riotgames.com/riot/account/v1/accounts/by-puuid/{request["riot_id"]}')
 
             logger.info(f'GET_PLAYER fetched player name "{json["gameName"]}#{json["tagLine"]}" for riot id "{request["riot_id"]}".')
 
@@ -135,8 +133,8 @@ def handle_request(request: Request) -> Json:
         case RequestType.GET_RANK:
             logger.info(f'Received GET_RANK request for riot id "{request["riot_id"]}".')
 
-            json = time_get_request(f'https://br1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{request["riot_id"]}')
-            json = time_get_request(f'https://br1.api.riotgames.com/lol/league/v4/entries/by-summoner/{json["id"]}')
+            json = _time_get_request(f'https://br1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{request["riot_id"]}')
+            json = _time_get_request(f'https://br1.api.riotgames.com/lol/league/v4/entries/by-summoner/{json["id"]}')
 
             rank = Ranks['UNRANKED']
             lp = None
@@ -155,7 +153,12 @@ def handle_request(request: Request) -> Json:
             }
 
 
-def time_get_request(url: str) -> Json:
+###########
+# Private #
+###########
+
+
+def _time_get_request(url: str) -> Json:
     global HEADERS
 
     global last_call

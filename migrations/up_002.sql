@@ -14,7 +14,7 @@ CREATE TABLE registry.matches (
 	"id"          bigint,
 	patch         smallint NOT NULL,
 	time          bigint NOT NULL,
-	duration      bigint NOT NULL,
+	duration      smallint NOT NULL,
 	is_blue_win   boolean,
 	PRIMARY KEY (region, "id")
 );

@@ -61,7 +61,7 @@ BEGIN
         	WHERE match_players.region = NEW.region AND match_id = NEW.id;
 
         IF player_count != 10 THEN
-            RAISE EXCEPTION 'Match %-% must have 10 players.', NEW.region, NEW.id;
+            RAISE EXCEPTION 'Match %_% must have 10 players.', NEW.region, NEW.id;
         END IF;
     END IF;
 

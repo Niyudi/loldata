@@ -8,3 +8,10 @@ CREATE TABLE "search".player_ranks (
 	PRIMARY KEY (player_id),
 	FOREIGN KEY (player_id) REFERENCES registry.players ("id")
 );
+
+CREATE TABLE "search".patch_players (
+	patch       smallint,
+	player_id   integer,
+	PRIMARY KEY (patch, player_id),
+	FOREIGN KEY (player_id) REFERENCES registry.players ("id")
+);

@@ -3,40 +3,18 @@ from enum import auto, Enum
 from queue import Queue
 from time import sleep
 from typing import Any
-from zoneinfo import ZoneInfo
 
-import pandas
 import requests
 
 import logger
-from constants import CALL_INTERVAL, DEFAULT_RETRIES, DEFAULT_RETRY_INTERVAL, MAX_ERRORS_PER_WINDOW, MAX_TIMEOUTS_PER_WINDOW, RIOT_API_KEY, TARGET_PATCH, WINDOW_SIZE
+from constants import (CALL_INTERVAL, DEFAULT_RETRIES, DEFAULT_RETRY_INTERVAL, END_TTIMESTAMP, MAX_ERRORS_PER_WINDOW,
+                       MAX_TIMEOUTS_PER_WINDOW, RIOT_API_KEY, START_TIMESTAMP, WINDOW_SIZE)
 from db_models.static import Ranks, Regions, Roles
 
 type Json = Any # Redundant but shows intention plz don't remove thx
 
 
 HEADERS: Json = { 'X-Riot-Token': RIOT_API_KEY }
-
-df_patch_history = pandas.read_csv('data/patch_history.csv')
-df_patch_history['patch'] = df_patch_history['patch'].astype(int)
-df_patch_history['date'] = df_patch_history['date'].apply(lambda x: int(datetime.strptime(x, '%Y-%m-%d').replace(tzinfo=ZoneInfo('US/Pacific')).timestamp()))
-
-curr_patch = df_patch_history.loc[df_patch_history['date'] < int(datetime.now().timestamp()), 'patch'].max()
-if TARGET_PATCH is None:
-    target_patch = curr_patch
-elif TARGET_PATCH > curr_patch:
-    raise Exception('Target patch is greater than current patch!')
-else:
-    target_patch = TARGET_PATCH
-
-IS_CURRENT_PATCH: bool = True if curr_patch == target_patch else False
-
-patch_index = df_patch_history[df_patch_history['patch'] == target_patch].index[0]
-
-START_TIMESTAMP: int = int(df_patch_history.at[patch_index, 'date'])
-END_TTIMESTAMP: int = int(df_patch_history.at[patch_index + 1, 'date'])
-
-del curr_patch, df_patch_history, target_patch, patch_index
 
 last_call: datetime = datetime.now()
 code_queue: Queue[int] = Queue(WINDOW_SIZE)
@@ -56,7 +34,7 @@ class RequestType(Enum):
 class Request:
     def __init__(self, type: RequestType, **kwargs):
         self.type: RequestType = type
-        self._params: dict[str, str] = kwargs
+        self._params: dict[str, Any] = kwargs
     
 
     def __getitem__(self, key: str):
@@ -132,11 +110,17 @@ def handle_request(request: Request) -> Json:
         case RequestType.GET_MATCH_LIST:
             logger.info(f'Received GET_MATCH_LIST request for riot id "{request["riot_id"]}".')
 
-            # TODO paginator that uses db to keep track between sessions
-            result = _time_get_request('https://americas.api.riotgames.com/lol/match/v5/matches/by-puuid/'
-                                    f'{request["riot_id"]}/ids?startTime={START_TIMESTAMP}&endTime={END_TTIMESTAMP}'
-                                    '&type=ranked&start=0&count=20')
-        
+            i = 0
+            result = []
+            while True:
+                result_one = _time_get_request('https://americas.api.riotgames.com/lol/match/v5/matches/by-puuid/'
+                                               f'{request["riot_id"]}/ids?startTime={START_TIMESTAMP}&endTime={END_TTIMESTAMP}'
+                                               f'&type=ranked&start={i}&count=100')
+                result.extend(result_one)
+                if len(result_one) < 100:
+                    break
+                i += 100
+
             logger.info(f'GET_MATCH_LIST fetched {len(result)} matches for riot id "{request["riot_id"]}".')
 
             return result

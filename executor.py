@@ -9,9 +9,9 @@ from sqlalchemy.orm import Session
 from sqlalchemy.dialects.postgresql import insert
 
 import logger
-from constants import PLAYER_QUEUE_SIZE, RANK_COOLDOWN
+from constants import IS_FINISHED_PATCH, PLAYER_QUEUE_SIZE, RANK_COOLDOWN, TARGET_PATCH
 from db_models.registry import Matches, MatchPlayers, Players
-from db_models.search import PlayerRanks
+from db_models.search import PatchPlayers, PlayerRanks
 from db_models.static import Champions, Ranks
 from request_handler import handle_request, Request, RequestType
 
@@ -38,11 +38,24 @@ def run(session: Session):
                 # FETCH_MATCH_LIST: Requests history of match id's for a given player id.
                 case OperationType.FETCH_MATCH_LIST:
                     logger.info(f'Making request for match list of player with id {player_id}...')
+                    
+                    if IS_FINISHED_PATCH:
+                        stmt = select(PatchPlayers).where(PatchPlayers.patch == TARGET_PATCH, PatchPlayers.player_id == player_id)
+                        df = pandas.read_sql(stmt, session.connection())
+
+                        if len(df.index) != 0:
+                            continue
+
                     result = handle_request(Request(RequestType.GET_MATCH_LIST, riot_id=riot_id))
                     
+                    if IS_FINISHED_PATCH:
+                        stmt = insert(PatchPlayers).values({'patch': TARGET_PATCH, 'player_id': player_id}).on_conflict_do_nothing()
+                        session.execute(stmt)
+                        session.commit()
+
                     for riot_match_id in result:
                         operations.put_nowait(Operation(OperationType.REGISTER_MATCH, riot_match_id=riot_match_id))
-                # REGISTER_MATCH: Saves match in databse.
+                # REGISTER_MATCH: Saves match in database.
                 case OperationType.REGISTER_MATCH:
                     logger.info(f'Making request for match of id {operation["riot_match_id"]}...')
                     result = handle_request(Request(RequestType.GET_MATCH, riot_match_id=operation['riot_match_id']))
@@ -129,7 +142,7 @@ def run(session: Session):
 
                     if result['rank'] >= Ranks.EMERALDIV:
                         operations.put_nowait(Operation(OperationType.FETCH_MATCH_LIST))
-                        logger.info(f'PLayer with id {player_id} ranked emerald or above! Queued for match regsitering.')
+                        logger.info(f'Player with id {player_id} ranked emerald or above! Queued for match regsitering.')
 
 
 ###########

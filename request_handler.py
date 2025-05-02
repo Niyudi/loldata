@@ -1,7 +1,7 @@
 from datetime import datetime
 from enum import auto, Enum
 from queue import Queue
-from time import sleep, time
+from time import sleep
 from typing import Any
 from zoneinfo import ZoneInfo
 

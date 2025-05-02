@@ -1,6 +1,6 @@
 CREATE TABLE search.patch_players (
     patch         smallint,
-    player_id     bigint,
+    player_id     integer,
     curr_pages    smallint NOT NULL,
     total_pages   smallint NOT NULL,
     is_done       boolean NOT NULL,

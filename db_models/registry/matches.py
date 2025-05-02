@@ -14,5 +14,5 @@ class Matches(Base):
     id: Mapped[int] = mapped_column(BIGINT, primary_key=True)
     patch: Mapped[int] = mapped_column(SMALLINT, nullable=False)
     time: Mapped[int] = mapped_column(BIGINT, nullable=False)
-    duration: Mapped[int] = mapped_column(BIGINT, nullable=False)
+    duration: Mapped[int] = mapped_column(SMALLINT, nullable=False)
     is_blue_win: Mapped[bool] = mapped_column(BOOLEAN)

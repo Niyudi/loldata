@@ -4,13 +4,11 @@ from queue import Queue
 from typing import Any
 
 import pandas
-
 from sqlalchemy import func, literal, select
 from sqlalchemy.orm import Session
 from sqlalchemy.dialects.postgresql import insert
 
 import logger
-
 from constants import PLAYER_QUEUE_SIZE, RANK_COOLDOWN
 from db_models.registry import Matches, MatchPlayers, Players
 from db_models.search import PlayerRanks

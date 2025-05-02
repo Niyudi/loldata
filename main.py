@@ -3,7 +3,6 @@ from sqlalchemy.orm import Session
 
 import executor
 import logger
-
 from constants import DB_URI
 
 

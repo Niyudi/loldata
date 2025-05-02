@@ -2,7 +2,7 @@ from datetime import datetime
 from sqlalchemy import ForeignKeyConstraint
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
-from sqlalchemy.dialects.postgresql import CHAR, ENUM, SMALLINT, TIMESTAMP
+from sqlalchemy.dialects.postgresql import ENUM, INTEGER, SMALLINT, TIMESTAMP
 
 from .base import Base
 from ..static import Ranks
@@ -11,7 +11,7 @@ from ..static import Ranks
 class PlayerRanks(Base):
     __tablename__ = "player_ranks"
 
-    player_id: Mapped[int] = mapped_column(CHAR(78), primary_key=True)
+    player_id: Mapped[int] = mapped_column(INTEGER, primary_key=True)
     rank: Mapped[Ranks] = mapped_column(ENUM(Ranks, create_type=False), nullable=False)
     lp: Mapped[int] = mapped_column(SMALLINT)
     last_update: Mapped[datetime] = mapped_column(TIMESTAMP, nullable=False)

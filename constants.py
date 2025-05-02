@@ -1,5 +1,19 @@
 from datetime import timedelta
 
+
+##########
+# CONFIG #
+##########
+
+
+TARGET_PATCH: int | None = None  # Patch within which search matches.
+
+
+###################
+# Other constants #
+###################
+
+
 CALL_INTERVAL: timedelta = timedelta(seconds=0.6)
 DEFAULT_RETRIES: int = 5
 DEFAULT_RETRY_INTERVAL: float = 10 # in seconds

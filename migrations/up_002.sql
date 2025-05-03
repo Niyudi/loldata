@@ -1,22 +1,22 @@
 CREATE SCHEMA registry;
 
 CREATE TABLE registry.players (
-	"id"        serial,
-	"riot_id"   char(78) NOT NULL,
-	"name"      varchar(16) NOT NULL,
-	tag         varchar(5) NOT NULL,
-	PRIMARY KEY ("id"),
-	UNIQUE ("riot_id")
+	id        serial,
+	riot_id   char(78) NOT NULL,
+	name      varchar(16) NOT NULL,
+	tag       varchar(5) NOT NULL,
+	PRIMARY KEY (id),
+	UNIQUE (riot_id)
 );
 
 CREATE TABLE registry.matches (
 	region        static.regions,
-	"id"          bigint,
+	id            bigint,
 	patch         smallint,
 	time          bigint,
 	duration      smallint,
 	is_blue_win   boolean,
-	PRIMARY KEY (region, "id")
+	PRIMARY KEY (region, id)
 );
 
 CREATE TABLE registry.match_players (
@@ -24,13 +24,13 @@ CREATE TABLE registry.match_players (
 	match_id       bigint,
 	player_id      integer,
 	champion_id    smallint NOT NULL,
-	"role"         static.roles NOT NULL,
+	role           static.roles NOT NULL,
 	is_blue_team   boolean NOT NULL,
 	PRIMARY KEY (region, match_id, player_id),
-	FOREIGN KEY (region, match_id) REFERENCES registry.matches (region, "id"),
-	FOREIGN KEY (player_id) REFERENCES registry.players ("id"),
-	FOREIGN KEY (champion_id) REFERENCES static.champions ("id"),
-	UNIQUE (region, match_id, "role", is_blue_team),
+	FOREIGN KEY (region, match_id) REFERENCES registry.matches (region, id),
+	FOREIGN KEY (player_id) REFERENCES registry.players (id),
+	FOREIGN KEY (champion_id) REFERENCES static.champions (id),
+	UNIQUE (region, match_id, role, is_blue_team),
 	UNIQUE (region, match_id, champion_id)
 );
 
@@ -57,7 +57,7 @@ BEGIN
         	FROM registry.matches
 			JOIN registry.match_players
 				ON matches.region = match_players.region AND
-					match_id = "id"
+					match_id = id
         	WHERE match_players.region = NEW.region AND match_id = NEW.id;
 
         IF player_count != 10 THEN

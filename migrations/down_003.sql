@@ -1,1 +1,1 @@
-DROP SCHEMA "search" CASCADE;
+DROP SCHEMA search CASCADE;

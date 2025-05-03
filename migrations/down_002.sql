@@ -1,1 +1,1 @@
-DROP SCHEMA "registry" CASCADE;
+DROP SCHEMA registry CASCADE;

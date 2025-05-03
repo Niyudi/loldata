@@ -1,6 +1,6 @@
-CREATE SCHEMA "static";
+CREATE SCHEMA static;
 
-CREATE TYPE "static".ranks AS ENUM (
+CREATE TYPE static.ranks AS ENUM (
 	'UNRANKED',
 	'IRONIV',
 	'IRONIII',
@@ -35,7 +35,7 @@ CREATE TYPE "static".ranks AS ENUM (
 	'CHALLENGERI'
 );
 
-CREATE TYPE "static".regions AS ENUM (
+CREATE TYPE static.regions AS ENUM (
 	'BR1',
 	'EUN1',
 	'EUW1',
@@ -53,7 +53,7 @@ CREATE TYPE "static".regions AS ENUM (
 	'VN2'
 );
 
-CREATE TYPE "static".roles AS ENUM (
+CREATE TYPE static.roles AS ENUM (
 	'Top',
 	'Jungle',
 	'Mid',
@@ -62,8 +62,8 @@ CREATE TYPE "static".roles AS ENUM (
 );
 
 CREATE TABLE "static".champions (
-	"id"     smallserial,
-	"name"   varchar(25) NOT NULL,
-	PRIMARY KEY ("id"),
-	UNIQUE ("name")
+	id     smallserial,
+	name   varchar(25) NOT NULL,
+	PRIMARY KEY (id),
+	UNIQUE (name)
 );

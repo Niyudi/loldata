@@ -1,1 +1,1 @@
-DROP SCHEMA "static" CASCADE;
+DROP SCHEMA static CASCADE;

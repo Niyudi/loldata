@@ -1,7 +1,11 @@
 To use the code, you need to create a folder called "keys" with two files, "DB_URI" and "RIOT_API_KEY":
 
 keys/
- -- DB_URI
- -- RIOT_API_KEY
+ |- DB_URI
+ |- RIOT_API_KEY
 
-In the "DB_URI" file, write the URI to connect to your PostgreSQL database. In the "RIOT_API_KEY", write your riot API key.
+In the "DB_URI" file, write the URI to connect to your PostgreSQL database. In the "RIOT_API_KEY", write your riot API
+key.
+
+To configure the database, run the "up" SQL scripts in the folder "migrations". For the search to begin, there must be
+at least one player ranked emerald or above regsitered in the "players" table.

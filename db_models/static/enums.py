@@ -1,7 +1,8 @@
-from enum import IntEnum
+from enum import auto, Enum
+from functools import total_ordering
 
-
-class Ranks(IntEnum):
+@total_ordering
+class Ranks(Enum):
     UNRANKED = 0
     IRONIV = 1
     IRONIII = 2
@@ -36,30 +37,36 @@ class Ranks(IntEnum):
     CHALLENGERI = 31
 
 
-class Regions(IntEnum):
-    BR1 = 0
-    EUN1 = 1
-    EUW1 = 2
-    JP1 = 3
-    KR = 4
-    LA1 = 5
-    LA2 = 6
-    ME1 = 7
-    NA1 = 8
-    OC1 = 9
-    RU = 10
-    SG2 = 11
-    TR1 = 12
-    TW2 = 13
-    VN2 = 14
+    def __lt__(self, other):
+        if self.__class__ is other.__class__:
+            return self.value < other.value
+        return NotImplemented
 
 
-class Roles(IntEnum):
-    Top = 0
-    Jungle = 1
-    Mid = 2
-    Bot = 3
-    Support = 4
+class Regions(Enum):
+    BR1 = auto()
+    EUN1 = auto()
+    EUW1 = auto()
+    JP1 = auto()
+    KR = auto()
+    LA1 = auto()
+    LA2 = auto()
+    ME1 = auto()
+    NA1 = auto()
+    OC1 = auto()
+    RU = auto()
+    SG2 = auto()
+    TR1 = auto()
+    TW2 = auto()
+    VN2 = auto()
+
+
+class Roles(Enum):
+    Top = auto()
+    Jungle = auto()
+    Mid = auto()
+    Bot = auto()
+    Support = auto()
 
     def from_riot_str(string: str) -> 'Roles':
         match string:

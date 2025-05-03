@@ -12,9 +12,9 @@ CREATE TABLE registry.players (
 CREATE TABLE registry.matches (
 	region        static.regions,
 	"id"          bigint,
-	patch         smallint NOT NULL,
-	time          bigint NOT NULL,
-	duration      smallint NOT NULL,
+	patch         smallint,
+	time          bigint,
+	duration      smallint,
 	is_blue_win   boolean,
 	PRIMARY KEY (region, "id")
 );

@@ -123,7 +123,7 @@ def handle_request(request: Request) -> Json:
 
             logger.info(f'GET_MATCH_LIST fetched {len(result)} matches for riot id "{request["riot_id"]}".')
 
-            return result
+            return [{'region': Regions[region], 'id': int(id)} for region, id in [x.split('_') for x in result]]
         case RequestType.GET_PLAYER:
             logger.info(f'Received GET_PLAYER request for riot id "{request["riot_id"]}".')
 

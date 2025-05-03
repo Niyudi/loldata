@@ -13,6 +13,8 @@ def main():
 
         with Session(engine) as session:
             executor.run(session)
+    except KeyboardInterrupt:
+        logger.info('Terminated through keyboard interruption!')
     except Exception as e:
         logger.error(f'{type(e).__name__}: {str(e)}', on_console=False)
         raise e

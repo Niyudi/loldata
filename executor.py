@@ -12,9 +12,8 @@ from sqlalchemy.orm import Session
 import logger
 from constants import IS_FINISHED_PATCH, MAX_UNREGISTERED_MATCHES, PLAYER_QUEUE_SIZE, RANK_COOLDOWN, TARGET_PATCH
 from db_models.registry import Matches, MatchPlayers, Players
-from db_models.search import PatchPlayers, PlayerRanks
+from db_models.search import PatchPlayers, PlayerRanks, TakenMatches
 from db_models.static import Champions, Ranks, Regions
-from db_models.sync import TakenMatches
 from request_handler import handle_request, Request, RequestType
 
 

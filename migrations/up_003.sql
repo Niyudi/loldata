@@ -15,3 +15,10 @@ CREATE TABLE "search".patch_players (
 	PRIMARY KEY (patch, player_id),
 	FOREIGN KEY (player_id) REFERENCES registry.players ("id")
 );
+
+CREATE TABLE "search".taken_matches (
+	region   static.regions,
+	"id"     bigint,
+	PRIMARY KEY (region, "id"),
+	FOREIGN KEY (region, "id") REFERENCES registry.matches (region, "id")
+);

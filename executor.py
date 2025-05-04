@@ -1,28 +1,54 @@
-from datetime import datetime
 from enum import auto, Enum
 from queue import Queue
 from typing import Any
 
 import pandas
-from sqlalchemy import delete, func, literal, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 import logger
-from constants import IS_FINISHED_PATCH, MAX_UNREGISTERED_MATCHES, PLAYER_QUEUE_SIZE, RANK_COOLDOWN, TARGET_PATCH
-from db_models.registry import Matches, MatchPlayers, Players
-from db_models.search import PatchPlayers, PlayerRanks, TakenMatches
+from config import GET_PLAYERS, MINIMUM_RANK
+from constants import IS_FINISHED_PATCH, MATCH_BATCH_SIZE, TARGET_PATCH
+from db_models.registry import Matches, MatchPlayers, Players, PlayerRanks
+from db_models.search import PatchPlayers, TakenMatches
 from db_models.static import Champions, Ranks, Regions
-from request_handler import handle_request, Request, RequestType
+from request_handler import Request, RequestType
+from request_handler import handle_request
 
 
 def run(session: Session):
     df_champions = pandas.read_sql(select(Champions), session.connection())
 
+    if GET_PLAYERS:
+        logger.info('Fetching players from leagues to begin search.')
+        rank = Ranks.CHALLENGER
+        total = 0
+        while rank >= MINIMUM_RANK:
+            result = handle_request(Request(RequestType.GET_LEAGUE, rank=rank))
+            df = pandas.DataFrame.from_records(result).drop_duplicates('riot_id', keep='last')
+
+            rowcount = session.execute(insert(Players)
+                                       .values(df[['riot_id']].to_dict(orient='records'))
+                                       .on_conflict_do_nothing()).rowcount
+            total += rowcount
+            logger.info(f'Regsitered {rowcount} new players in database!')
+            
+            stmt = select(Players).where(Players.riot_id.in_(df['riot_id']))
+            df_players = pandas.read_sql(stmt, session.connection()).rename(columns={'id': 'player_id'})
+            df = pandas.merge(df, df_players, on='riot_id').drop(columns='riot_id')
+
+            session.execute(insert(PlayerRanks).values(df.to_dict(orient='records')).on_conflict_do_nothing())
+            session.commit()
+
+            rank = rank.previous()
+        logger.info(f'Fetched and registered {total} players!')
+        del df, df_players, rank, result, rowcount, stmt, total
+
     taken_matches: list[tuple[Regions, int]] = []
+    operations: Queue[Operation] = Queue()
     try:
-        operations: Queue[Operation] = Queue()
         while True:
             operations.put_nowait(Operation(OperationType.GET_UNREGISTERED_MATCHES))
             while operations.qsize() > 0:
@@ -44,70 +70,62 @@ def run(session: Session):
                         result = handle_request(Request(RequestType.GET_MATCH_LIST, riot_id=operation["riot_id"]))
                         stmt = insert(Matches).values(result).on_conflict_do_nothing()
                         session.execute(stmt)
-                        session.commit()
 
                         if IS_FINISHED_PATCH:
                             stmt = insert(PatchPlayers).values({'patch': TARGET_PATCH, 'player_id': player_id}).on_conflict_do_nothing()
                             session.execute(stmt)
-                            session.commit()
+                        
+                        session.commit()
 
                         operations.put_nowait(Operation(OperationType.GET_UNREGISTERED_MATCHES))
-                    # GET_PLAYER: TODO description
+                    # GET_PLAYER: Gets players from database that have not had their matches registered yet and are within search criteria.
                     case OperationType.GET_PLAYER:
-                        # First, try player that is registered but without a rank in database
-                        logger.info('Getting from database player without a registered rank...')
+                        logger.info('Getting from database player to register matches...')
 
-                        stmt = (select(Players.id, Players.riot_id)
-                                .join(PlayerRanks, Players.id == PlayerRanks.player_id, isouter=True)
-                                .where(PlayerRanks.rank.is_(None))
+                        q1 = (select(Players.id, Players.riot_id, PlayerRanks.rank,
+                                     func.rank().over(partition_by=(Players.id, Players.riot_id),
+                                                      order_by=PlayerRanks.timestamp.desc()).label('time'))
+                              .join(PlayerRanks, Players.id == PlayerRanks.player_id, isouter=True)
+                              .subquery())
+                        q2 = select(PatchPlayers).where(PatchPlayers.patch == TARGET_PATCH).subquery()
+                        stmt = (select(q1.c.id, q1.c.riot_id)
+                                .join(q2, q1.c.id == q2.c.player_id, isouter=True)
+                                .where(q1.c.time == 1, q1.c.rank >= MINIMUM_RANK, q2.c.patch.is_(None))
                                 .limit(1))
                         df = pandas.read_sql(stmt, session.connection())
 
-                        if len(df.index) > 0:
-                            logger.info(f'Got player with id {df.at[0, "id"]} for search.')
-                            operations.put_nowait(Operation(OperationType.REGISTER_RANK, player_id=df.at[0, "id"], riot_id=df.at[0, "riot_id"]))
-                            continue
-
-                        # Second, try player who have not had their rank checked in the last RANK_COOLDOWN days
-                        logger.info(f'Getting from database player with rank registered more than {RANK_COOLDOWN.days} days ago...')
-                        stmt = (select(Players.id, Players.riot_id)
-                                .join(PlayerRanks, Players.id == PlayerRanks.player_id, isouter=True)
-                                .where(PlayerRanks.last_update < literal(datetime.now().astimezone() - RANK_COOLDOWN))
-                                .limit(1))
-                        df = pandas.read_sql(stmt, session.connection())
-
-                        if len(df.index) > 0:
-                            logger.info(f'Got player with id {df.at[0, "id"]} for search.')
-                            operations.put_nowait(Operation(OperationType.REGISTER_RANK, player_id=df.at[0, "id"], riot_id=df.at[0, "riot_id"]))
-                            continue
-
-                        raise Exception('No player candidate for search available in database!')
+                        if len(df.index) == 0:
+                            raise Exception(f'No players that weren\'t searched for patch {TARGET_PATCH} and are ranked {MINIMUM_RANK.name} or above! Ending search.')
+                        
+                        logger.info(f'Got player with id {df.at[0, "id"]} for search.')
+                        operations.put_nowait(Operation(OperationType.FETCH_MATCH_LIST, player_id=df.at[0, "id"], riot_id=df.at[0, "riot_id"]))
                     # GET_UNREGISTERED_MATCHES: Gets matches from db that have id's, but no data.
                     case OperationType.GET_UNREGISTERED_MATCHES:
                         logger.info(f'Getting matches from db with no data...')
 
-                        stmt = select(Matches.region, Matches.id).where(Matches.patch.is_(None)).limit(MAX_UNREGISTERED_MATCHES)
+                        stmt = select(Matches.region, Matches.id).where(Matches.patch.is_(None)).limit(MATCH_BATCH_SIZE)
                         df = pandas.read_sql(stmt, session.connection())
 
                         if len(df.index) == 0:
                             logger.info(f'No ungegistered mathces in db! Getting new player to fetch matches...')
                             operations.put_nowait(Operation(OperationType.GET_PLAYER))
-                        else:
-                            taken_matches = list(df.itertuples(index=False, name=None))
+                            continue
+                        
+                        taken_matches = list(df.itertuples(index=False, name=None))
 
-                            stmt = insert(TakenMatches).values(df.to_dict(orient='records'))
-                            try:
-                                session.execute(stmt)
-                                session.commit()
-                            except IntegrityError as e:
-                                session.rollback()
-                                operations.put_nowait(Operation(OperationType.GET_UNREGISTERED_MATCHES))
-                                continue
+                        stmt = insert(TakenMatches).values(df.to_dict(orient='records'))
+                        try:
+                            session.execute(stmt)
+                            session.commit()
+                        except IntegrityError as e:
+                            logger.info(f'Matches already taken (probably due to concurrent request)! Retrying...')
+                            session.rollback()
+                            operations.put_nowait(Operation(OperationType.GET_UNREGISTERED_MATCHES))
+                            continue
 
-                            logger.info(f'Got {len(df.index)} matches wihtout data. Queueing data requests...')
-
-                            for riot_match_id in df.apply(lambda row: f'{row["region"].name}_{row["id"]}', axis=1):
-                                operations.put_nowait(Operation(OperationType.REGISTER_MATCH, riot_match_id=riot_match_id))
+                        logger.info(f'Got {len(df.index)} matches wihtout data. Queueing data requests...')
+                        for riot_match_id in df.apply(lambda row: f'{row["region"].name}_{row["id"]}', axis=1):
+                            operations.put_nowait(Operation(OperationType.REGISTER_MATCH, riot_match_id=riot_match_id))
                     # REGISTER_MATCH: Saves match in database.
                     case OperationType.REGISTER_MATCH:
                         logger.info(f'Making request for match of id {operation["riot_match_id"]}...')
@@ -116,10 +134,10 @@ def run(session: Session):
                         region, id, match_players = result.pop('region'), result.pop('id'), result.pop('players')
                         stmt = update(Matches).where(Matches.region == region, Matches.id == id).values(result)
                         session.execute(stmt)
-                        logger.info(f'Inserting match with id {region}_{id} into database.')
+                        logger.info(f'Inserting match with id {region.name}_{id} into database.')
                         if result['is_blue_win'] is None:
                             session.commit()
-                            logger.info('Invalid match! Skipping match_players info...')
+                            logger.info('Invalid match! Skipping aditional match info...')
                             continue
                         
                         for i in range(len(match_players)):
@@ -128,26 +146,19 @@ def run(session: Session):
                             match_players[i]['match_id'] = id
 
                             # Player registry
-                            stmt = (select(Players.id, PlayerRanks.rank, PlayerRanks.last_update)
-                                    .join(PlayerRanks, Players.id == PlayerRanks.player_id, isouter=True)
-                                    .where(Players.riot_id == match_players[i]['puuid']))
-                            df = pandas.read_sql(stmt, session.connection())
+                            match_players[i]['player_id'] = session.execute(select(Players.id).where(Players.riot_id == match_players[i]['puuid'])).scalar()
 
-                            if len(df.index) == 0:
-                                logger.info(f'Player with riot id "{match_players[i]["puuid"]}" not registered. Making request...')
-                                player_result = handle_request(Request(RequestType.GET_PLAYER, riot_id=match_players[i]['puuid']))
-                                stmt = (insert(Players)
-                                        .values(player_result))
-                                session.execute(stmt)
+                            if match_players[i]['player_id'] is None:
+                                logger.info(f'Player with riot id "{match_players[i]["puuid"]}" not registered! Regsitering...')
+                                session.execute(insert(Players).values({'riot_id': match_players[i]['puuid']}))
 
-                                stmt = (select(Players.id)
-                                    .where(Players.riot_id == match_players[i]['puuid']))
-                                df = pandas.read_sql(stmt, session.connection())
-                                df['rank'] = None
-                                df['last_update'] = None
+                                rank_result = handle_request(Request(RequestType.GET_RANK, riot_id=match_players[i]['puuid']))
+                                rank_result['player_id'] = session.execute(select(Players.id).where(Players.riot_id == match_players[i]['puuid'])).scalar()
+                                session.execute(insert(PlayerRanks).values(rank_result))
+
+                                match_players[i]['player_id'] = rank_result['player_id']
                             
                             match_players[i].pop('puuid')
-                            match_players[i]['player_id'] = int(df['id'].iloc[0])
 
                             # Champion regsitry
                             df = df_champions[df_champions['name'] == match_players[i]['champion_name']]
@@ -172,33 +183,12 @@ def run(session: Session):
 
                         session.commit()
                         logger.info('Inserted match-player info into database.')
-                    # REGISTER_RANK: Requests and saves rank for given player id in database.
-                    case OperationType.REGISTER_RANK:
-                        player_id = int(operation["player_id"])
-
-                        logger.info(f'Making request for rank of player with id {player_id}...')
-
-                        result = handle_request(Request(RequestType.GET_RANK, player_id=player_id, riot_id=operation["riot_id"]))
-
-                        stmt = (insert(PlayerRanks).values(result)
-                                .on_conflict_do_update(index_elements=[PlayerRanks.player_id],
-                                                    set_={PlayerRanks.rank: result['rank'],
-                                                            PlayerRanks.lp: result['lp'],
-                                                            PlayerRanks.last_update: func.current_timestamp()}))
-                        session.execute(stmt)
-                        session.commit()
-
-                        if result['rank'] >= Ranks.EMERALDIV:
-                            operations.put_nowait(Operation(OperationType.FETCH_MATCH_LIST, player_id=player_id, riot_id=operation["riot_id"]))
-                            logger.info(f'Player with id {player_id} ranked emerald or above! Queued for match regsitering.')
-                        else:
-                            operations.put_nowait(Operation(OperationType.GET_PLAYER))
-                            logger.info(f'Player with id {player_id} ranked lower than emerald. Getting new player...')
     finally:
         session.rollback()
         for region, id in taken_matches:
             session.execute(delete(TakenMatches).where(TakenMatches.region == region, TakenMatches.id == id))
         session.commit()
+
 
 ###########
 # Private #
@@ -210,7 +200,6 @@ class OperationType(Enum):
     GET_PLAYER = auto()
     GET_UNREGISTERED_MATCHES = auto()
     REGISTER_MATCH = auto()
-    REGISTER_RANK = auto()
 
 
 class Operation:

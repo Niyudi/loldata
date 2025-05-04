@@ -8,7 +8,7 @@ import requests
 
 import logger
 from constants import (CALL_INTERVAL, DEFAULT_RETRIES, DEFAULT_RETRY_INTERVAL, END_TTIMESTAMP, MAX_ERRORS_PER_WINDOW,
-                       MAX_TIMEOUTS_PER_WINDOW, RIOT_API_KEY, START_TIMESTAMP, WINDOW_SIZE)
+                       MAX_TIMEOUTS_PER_WINDOW, PST_TIMEZONE, RIOT_API_KEY, START_TIMESTAMP, WINDOW_SIZE)
 from db_models.static import Ranks, Regions, Roles
 
 type Json = Any # Redundant but shows intention plz don't remove thx
@@ -25,9 +25,9 @@ timeout_count: int = 0
 
 
 class RequestType(Enum):
+    GET_LEAGUE = auto()
     GET_MATCH = auto()
     GET_MATCH_LIST = auto()
-    GET_PLAYER = auto()
     GET_RANK = auto()
 
 
@@ -43,6 +43,23 @@ class Request:
 
 def handle_request(request: Request) -> Json:
     match request.type:
+        case RequestType.GET_LEAGUE:
+            logger.info(f'Received GET_LEAGUE request for rank {request["rank"].name}.')
+            tier, rank = request['rank'].tier_rank()
+
+            i = 1
+            timestamp = int(datetime.now(PST_TIMEZONE).timestamp())
+            json = _time_get_request(f'https://br1.api.riotgames.com/lol/league-exp/v4/entries/RANKED_SOLO_5x5/{tier}/{rank}?page={i}')
+            players = [{'riot_id': entry['puuid'], 'timestamp': timestamp, 'rank': request['rank'], 'lp': entry['leaguePoints']} for entry in json]
+            while len(json) == 205:
+                logger.info(f'GET_LEAGUE fetching {len(players)} players...')
+                i += 1
+                timestamp = int(datetime.now(PST_TIMEZONE).timestamp())
+                json = _time_get_request(f'https://br1.api.riotgames.com/lol/league-exp/v4/entries/RANKED_SOLO_5x5/{tier}/{rank}?page={i}')
+                players.extend([{'riot_id': entry['puuid'], 'timestamp': timestamp, 'rank': request['rank'], 'lp': entry['leaguePoints']} for entry in json])
+            
+            logger.info(f'GET_LEAGUE fetched {len(players)} players in total from rank {request["rank"].name}!')
+            return players
         case RequestType.GET_MATCH:
             logger.info(f'Received GET_MATCH request for match id "{request["riot_match_id"]}".')
 
@@ -115,7 +132,7 @@ def handle_request(request: Request) -> Json:
             while True:
                 result_one = _time_get_request('https://americas.api.riotgames.com/lol/match/v5/matches/by-puuid/'
                                                f'{request["riot_id"]}/ids?startTime={START_TIMESTAMP}&endTime={END_TTIMESTAMP}'
-                                               f'&type=ranked&start={i}&count=100')
+                                               f'&queue=420&start={i}&count=100')
                 result.extend(result_one)
                 if len(result_one) < 100:
                     break
@@ -124,36 +141,27 @@ def handle_request(request: Request) -> Json:
             logger.info(f'GET_MATCH_LIST fetched {len(result)} matches for riot id "{request["riot_id"]}".')
 
             return [{'region': Regions[region], 'id': int(id)} for region, id in [x.split('_') for x in result]]
-        case RequestType.GET_PLAYER:
-            logger.info(f'Received GET_PLAYER request for riot id "{request["riot_id"]}".')
-
-            json = _time_get_request(f'https://americas.api.riotgames.com/riot/account/v1/accounts/by-puuid/{request["riot_id"]}')
-
-            logger.info(f'GET_PLAYER fetched player name "{json["gameName"]}#{json["tagLine"]}" for riot id "{request["riot_id"]}".')
-
-            return {
-                'riot_id': request["riot_id"],
-                'name': json['gameName'],
-                'tag': json['tagLine'],
-            }
         case RequestType.GET_RANK:
             logger.info(f'Received GET_RANK request for riot id "{request["riot_id"]}".')
 
-            json = _time_get_request(f'https://br1.api.riotgames.com/lol/summoner/v4/summoners/by-puuid/{request["riot_id"]}')
-            json = _time_get_request(f'https://br1.api.riotgames.com/lol/league/v4/entries/by-summoner/{json["id"]}')
+            timestamp = int(datetime.now(PST_TIMEZONE).timestamp())
+            json = _time_get_request(f'https://br1.api.riotgames.com/lol/league/v4/entries/by-puuid/{request["riot_id"]}')
 
             rank = Ranks['UNRANKED']
             lp = None
             for entry in json:
                 if entry['queueType'] == 'RANKED_SOLO_5x5':
-                    rank = Ranks[f'{entry["tier"]}{entry["rank"]}']
+                    if entry['tier'] in ('MASTER', 'GRANDMASTER', 'CHALLENGER'):
+                        rank = Ranks[entry['tier']]
+                    else:
+                        rank = Ranks[f'{entry["tier"]}{entry["rank"]}']
                     lp = int(entry['leaguePoints'])
                     break
 
-            logger.info(f'GET_RANK fetched rank {rank.name} for riot id "{request["riot_id"]}".')
+            logger.info(f'GET_RANK fetched rank {rank.name}{"" if lp is None else f" {lp}LP"} for riot id "{request["riot_id"]}".')
             
             return {
-                'player_id': request["player_id"],
+                'timestamp': timestamp,
                 'rank': rank,
                 'lp': lp,
             }
@@ -205,35 +213,36 @@ def _time_get_request(url: str) -> Json:
             logger.error(f'Maximum number of retries ({DEFAULT_RETRIES}) reached!')
             req.raise_for_status()
         
-        match req.status_code:
-            case 429:
-                error_count += 1
-                timeout_count += 1
+        if req.status_code == 429:
+            error_count += 1
+            timeout_count += 1
 
-                if timeout_count == MAX_TIMEOUTS_PER_WINDOW:
-                    logger.error(f'Maximum timeout rate ({MAX_TIMEOUTS_PER_WINDOW}/{WINDOW_SIZE}) reached!')
-                    req.raise_for_status()
+            if timeout_count == MAX_TIMEOUTS_PER_WINDOW:
+                logger.error(f'Maximum timeout rate ({MAX_TIMEOUTS_PER_WINDOW}/{WINDOW_SIZE}) reached!')
+                req.raise_for_status()
 
-                if 'Retry-After' in req.headers:
-                    sleep_interval = float(req.headers['Retry-After'])
-                else:
-                    sleep_interval = DEFAULT_RETRY_INTERVAL
-                logger.warning(f'Timeout happened! Waiting for {sleep_interval:.01f} seconds.')
-                
-                sleep(sleep_interval) 
-            case _:
-                error_count += 1
+            if 'Retry-After' in req.headers:
+                sleep_interval = float(req.headers['Retry-After'])
+            else:
+                sleep_interval = DEFAULT_RETRY_INTERVAL
+            logger.warning(f'Timeout happened! Waiting for {sleep_interval:.01f} seconds.')
+            
+            sleep(sleep_interval)
+        elif req.status_code == 400 and req.json()['status']['message'] == 'Unknown apikey':
+            raise Exception('Invalid Riot API key!')
+        else:
+            error_count += 1
 
-                if error_count == MAX_ERRORS_PER_WINDOW:
-                    logger.error(f'Maximum error rate ({MAX_ERRORS_PER_WINDOW}/{WINDOW_SIZE}) reached!')
-                    req.raise_for_status()
-                
-                try:
-                    req.raise_for_status()
-                except requests.exceptions.HTTPError as e:
-                    logger.warning(f'HTTP error: {str(e)}. Retrying...')
-                
-                sleep(DEFAULT_RETRY_INTERVAL)
+            if error_count == MAX_ERRORS_PER_WINDOW:
+                logger.error(f'Maximum error rate ({MAX_ERRORS_PER_WINDOW}/{WINDOW_SIZE}) reached!')
+                req.raise_for_status()
+            
+            try:
+                req.raise_for_status()
+            except requests.exceptions.HTTPError as e:
+                logger.warning(f'HTTP error: {str(e)}. Retrying...')
+            
+            sleep(DEFAULT_RETRY_INTERVAL)
         
         attempts = 0
         while True:

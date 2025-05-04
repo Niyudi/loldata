@@ -3,28 +3,16 @@ from zoneinfo import ZoneInfo
 
 import pandas
 
-
-##########
-# CONFIG #
-##########
-
-
-TARGET_PATCH: int | None = 1502  # Patch within which search matches.
-
-
-#############
-# Constants #
-#############
+from config import TARGET_PATCH
 
 
 CALL_INTERVAL: timedelta = timedelta(seconds=0.6)
 DEFAULT_RETRIES: int = 5
 DEFAULT_RETRY_INTERVAL: float = 10 # in seconds
+MATCH_BATCH_SIZE: int = 5
 MAX_ERRORS_PER_WINDOW: int = 10
 MAX_TIMEOUTS_PER_WINDOW: int = 5
-MAX_UNREGISTERED_MATCHES: int = 5
-PLAYER_QUEUE_SIZE: int = 20
-RANK_COOLDOWN: timedelta = timedelta(days=3.0)
+PST_TIMEZONE: ZoneInfo = ZoneInfo('US/Pacific')
 WINDOW_SIZE: int = 200
 
 with open('keys/DB_URI', 'r') as file:
@@ -35,7 +23,7 @@ with open('keys/RIOT_API_KEY', 'r') as file:
 # Target patch logic
 df_patch_history = pandas.read_csv('data/patch_history.csv')
 df_patch_history['patch'] = df_patch_history['patch'].astype(int)
-df_patch_history['date'] = df_patch_history['date'].apply(lambda x: int(datetime.strptime(x, '%Y-%m-%d').replace(tzinfo=ZoneInfo('US/Pacific')).timestamp()))
+df_patch_history['date'] = df_patch_history['date'].apply(lambda x: int(datetime.strptime(x, '%Y-%m-%d').replace(tzinfo=PST_TIMEZONE).timestamp()))
 
 curr_patch = df_patch_history.loc[df_patch_history['date'] < int(datetime.now().timestamp()), 'patch'].max()
 if TARGET_PATCH is None:

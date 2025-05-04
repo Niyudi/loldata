@@ -3,11 +3,55 @@ CREATE SCHEMA registry;
 CREATE TABLE registry.players (
 	id        serial,
 	riot_id   char(78) NOT NULL,
-	name      varchar(16) NOT NULL,
-	tag       varchar(5) NOT NULL,
 	PRIMARY KEY (id),
 	UNIQUE (riot_id)
 );
+
+CREATE TABLE registry.player_ranks (
+	player_id   integer,
+	timestamp   bigint,
+	rank        static.ranks NOT NULL,
+	lp          smallint,
+	PRIMARY KEY (player_id, timestamp),
+	FOREIGN KEY (player_id) REFERENCES registry.players (id)
+);
+
+CREATE FUNCTION registry.enforce_rank() RETURNS trigger AS $$
+DECLARE
+	row_count integer := 0;
+    must_check boolean := false;
+BEGIN
+    IF TG_OP = 'INSERT' THEN
+        must_check := true;
+    END IF;
+
+    IF TG_OP = 'UPDATE' THEN
+        IF (NEW.id != OLD.id OR NEW.riot_id != OLD.riot_id) THEN
+            must_check := true;
+        END IF;
+    END IF;
+
+    IF must_check THEN
+        LOCK TABLE registry.players IN EXCLUSIVE MODE;
+        LOCK TABLE registry.player_ranks IN EXCLUSIVE MODE;
+
+        SELECT INTO row_count COUNT(timestamp) 
+        	FROM registry.player_ranks
+        	WHERE player_id = NEW.id;
+
+        IF row_count = 0 THEN
+            RAISE EXCEPTION 'Player with riot id % must have a registered rank.', NEW.riot_id;
+        END IF;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE CONSTRAINT TRIGGER enforce_rank
+    AFTER INSERT OR UPDATE ON registry.players
+	DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW EXECUTE FUNCTION registry.enforce_rank();
 
 CREATE TABLE registry.matches (
 	region        static.regions,
@@ -54,11 +98,8 @@ BEGIN
         LOCK TABLE registry.match_players IN EXCLUSIVE MODE;
 
         SELECT INTO player_count COUNT(player_id) 
-        	FROM registry.matches
-			JOIN registry.match_players
-				ON matches.region = match_players.region AND
-					match_id = id
-        	WHERE match_players.region = NEW.region AND match_id = NEW.id;
+        	FROM registry.match_players
+        	WHERE region = NEW.region AND match_id = NEW.id;
 
         IF player_count != 10 THEN
             RAISE EXCEPTION 'Match %_% must have 10 players.', NEW.region, NEW.id;

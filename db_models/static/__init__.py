@@ -1,3 +1,3 @@
 from .champions import Champions
-from .enums import Ranks, Regions, Roles
+from .enums import ObjectiveTypes, Ranks, Regions, Roles, StructureTypes
 from .patches import Patches

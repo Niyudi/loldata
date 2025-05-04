@@ -1,6 +1,21 @@
 from enum import auto, Enum
 from functools import total_ordering
 
+
+class ObjectiveTypes(Enum):
+    ATHAKAN = auto()
+    BARON = auto()
+    DRAKE_CHEMTECH = auto()
+    DRAKE_CLOUD = auto()
+    DRAKE_HEXTECH = auto()
+    DRAKE_INFERNAL = auto()
+    DRAKE_MOUNTAIN = auto()
+    DRAKE_OCEAN = auto()
+    ELDER_DRAKE = auto()
+    GRUBS = auto()
+    HERALD = auto()
+
+
 @total_ordering
 class Ranks(Enum):
     UNRANKED = 0
@@ -157,3 +172,19 @@ class Roles(Enum):
                 return Roles.Support
         
         raise Exception(f'{string} is not a valid role!')
+
+
+class StructureTypes(Enum):
+    TURRET_T1_TOP = auto()
+    TURRET_T1_MID = auto()
+    TURRET_T1_BOT = auto()
+    TURRET_T2_TOP = auto()
+    TURRET_T2_MID = auto()
+    TURRET_T2_BOT = auto()
+    TURRET_T3_TOP = auto()
+    TURRET_T3_MID = auto()
+    TURRET_T3_BOT = auto()
+    INHIBITOR_TOP = auto()
+    INHIBITOR_MID = auto()
+    INHIBITOR_BOT = auto()
+    TURRET_NEXUS = auto()

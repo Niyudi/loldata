@@ -3,7 +3,7 @@ from queue import Queue
 from typing import Any
 
 import pandas
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import and_, delete, func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -104,7 +104,10 @@ def run(session: Session):
                     case OperationType.GET_UNREGISTERED_MATCHES:
                         logger.info(f'Getting matches from db with no data...')
 
-                        stmt = select(Matches.region, Matches.id).where(Matches.patch.is_(None)).limit(MATCH_BATCH_SIZE)
+                        stmt = (select(Matches.region, Matches.id)
+                                .join(TakenMatches, and_(Matches.region == TakenMatches.region, Matches.id == TakenMatches.id), isouter=True)
+                                .where(Matches.patch.is_(None), TakenMatches.id.is_(None))
+                                .limit(MATCH_BATCH_SIZE))
                         df = pandas.read_sql(stmt, session.connection())
 
                         if len(df.index) == 0:
@@ -203,6 +206,17 @@ def run(session: Session):
                                                         riot_match_id=operation['riot_match_id'],
                                                         riot_id_role_dict=riot_id_role_dict,
                                                         role_timelines_dict=role_timelines_dict))
+                        
+                        for event in result:  # TODO handle all cases
+                            match event['timeline_type']:
+                                case 'ITEM':
+                                    pass
+                                case 'KILL':
+                                    pass
+                                case 'OBJECTIVE':
+                                    pass
+                                case 'STRUCTURE':
+                                    pass
 
 
                         session.execute(delete(TakenMatches).where(TakenMatches.region == region, TakenMatches.id == id))

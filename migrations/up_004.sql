@@ -6,7 +6,7 @@ CREATE TABLE match_data.timelines (
 	match_id       bigint,
 	role           static.roles,
 	is_blue_team   boolean NOT NULL,
-    PRIMARY KEY ("id"),
+    PRIMARY KEY (id),
     FOREIGN KEY (region, match_id) REFERENCES registry.matches (region, id),
     UNIQUE (region, match_id, role, is_blue_team)
 );
@@ -68,10 +68,11 @@ CREATE TYPE static.objective_types AS ENUM (
 );
 
 CREATE TABLE match_data.timeline_objectives (
-    timeline_id    bigint,
-    timestamp      integer,
-    type           static.objective_types NOT NULL,
-    assist_roles   static.roles[] NOT NULL,
+    timeline_id          bigint,
+    timestamp            integer,
+    type                 static.objective_types NOT NULL,
+    assist_roles         static.roles[] NOT NULL,
+    enemy_assist_roles   static.roles[] NOT NULL,
     PRIMARY KEY (timeline_id, timestamp),
 	FOREIGN KEY (timeline_id) REFERENCES match_data.timelines (id)
 );

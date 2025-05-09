@@ -3,7 +3,7 @@ from functools import total_ordering
 
 
 class ObjectiveTypes(Enum):
-    ATHAKAN = auto()
+    ATAKHAN = auto()
     BARON = auto()
     DRAKE_CHEMTECH = auto()
     DRAKE_CLOUD = auto()
@@ -14,6 +14,35 @@ class ObjectiveTypes(Enum):
     ELDER_DRAKE = auto()
     GRUBS = auto()
     HERALD = auto()
+
+
+    def from_riot_type(monster_type: str, monster_subtype: str | None) -> 'ObjectiveTypes':
+        match monster_type:
+            case 'ATAKHAN':
+                return ObjectiveTypes.ATAKHAN
+            case 'BARON_NASHOR':
+                return ObjectiveTypes.BARON
+            case 'DRAGON':
+                match monster_subtype:
+                    case 'AIR_DRAGON':
+                        return ObjectiveTypes.DRAKE_CLOUD
+                    case 'CHEMTECH_DRAGON':
+                        return ObjectiveTypes.DRAKE_CHEMTECH
+                    case 'EARTH_DRAGON':
+                        return ObjectiveTypes.DRAKE_MOUNTAIN
+                    case 'ELDER_DRAGON':
+                        return ObjectiveTypes.ELDER_DRAKE
+                    case 'FIRE_DRAGON':
+                        return ObjectiveTypes.DRAKE_INFERNAL
+                    case 'HEXTECH_DRAGON':
+                        return ObjectiveTypes.DRAKE_HEXTECH
+                    case 'WATER_DRAGON':
+                        return ObjectiveTypes.DRAKE_OCEAN
+            case 'HORDE':
+                return ObjectiveTypes.GRUBS
+            case 'RIFTHERALD':
+                return ObjectiveTypes.HERALD
+        return NotImplemented
 
 
 @total_ordering
@@ -175,6 +204,7 @@ class Roles(Enum):
 
 
 class StructureTypes(Enum):
+    TURRET_NEXUS = auto()
     TURRET_T1_TOP = auto()
     TURRET_T1_MID = auto()
     TURRET_T1_BOT = auto()
@@ -187,4 +217,44 @@ class StructureTypes(Enum):
     INHIBITOR_TOP = auto()
     INHIBITOR_MID = auto()
     INHIBITOR_BOT = auto()
-    TURRET_NEXUS = auto()
+
+
+    def from_riot_type(structure_type: str, lane_type: str, tower_type: str | None) -> 'ObjectiveTypes':
+        match structure_type:
+            case 'INHIBITOR_BUILDING':
+                match lane_type:
+                    case 'TOP_LANE':
+                        return StructureTypes.INHIBITOR_TOP
+                    case 'MID_LANE':
+                        return StructureTypes.INHIBITOR_MID
+                    case 'BOT_LANE':
+                        return StructureTypes.INHIBITOR_MID
+            case 'TOWER_BUILDING':
+                match tower_type:
+                    case 'BASE_TURRET':
+                        match lane_type:
+                            case 'TOP_LANE':
+                                return StructureTypes.TURRET_T3_TOP
+                            case 'MID_LANE':
+                                return StructureTypes.TURRET_T3_MID
+                            case 'BOT_LANE':
+                                return StructureTypes.TURRET_T3_BOT
+                    case 'INNER_TURRET':
+                        match lane_type:
+                            case 'TOP_LANE':
+                                return StructureTypes.TURRET_T2_TOP
+                            case 'MID_LANE':
+                                return StructureTypes.TURRET_T2_MID
+                            case 'BOT_LANE':
+                                return StructureTypes.TURRET_T2_BOT
+                    case 'NEXUS_TURRET':
+                        return StructureTypes.TURRET_NEXUS
+                    case 'OUTER_TURRET':
+                        match lane_type:
+                            case 'TOP_LANE':
+                                return StructureTypes.TURRET_T1_TOP
+                            case 'MID_LANE':
+                                return StructureTypes.TURRET_T1_MID
+                            case 'BOT_LANE':
+                                return StructureTypes.TURRET_T1_BOT
+        return NotImplemented

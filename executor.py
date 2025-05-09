@@ -11,9 +11,10 @@ from sqlalchemy.orm import Session
 import logger
 from config import GET_PLAYERS, MINIMUM_RANK
 from constants import IS_FINISHED_PATCH, MATCH_BATCH_SIZE, TARGET_PATCH
+from db_models.match_data import Timelines
 from db_models.registry import Matches, MatchPlayers, Players, PlayerRanks
 from db_models.search import PatchPlayers, TakenMatches
-from db_models.static import Champions, Ranks, Regions
+from db_models.static import Champions, Ranks, Regions, Roles
 from request_handler import Request, RequestType
 from request_handler import handle_request
 
@@ -140,7 +141,11 @@ def run(session: Session):
                             logger.info('Invalid match! Skipping aditional match info...')
                             continue
                         
+                        riot_id_role_dict: dict[str, (Roles, bool)] = {}
                         for i in range(len(match_players)):
+                            # Makes riot_id -> role dicitonary
+                            riot_id_role_dict[match_players[i]['puuid']] = (match_players[i]['role'], match_players[i]['is_blue_team'])
+
                             # Adds match info to players
                             match_players[i]['region'] = region
                             match_players[i]['match_id'] = id
@@ -174,12 +179,33 @@ def run(session: Session):
                             match_players[i].pop('champion_name')
                             match_players[i]['champion_id'] = int(df['id'].iloc[0])
 
-                        stmt = (insert(MatchPlayers)
-                                .values(match_players))
-                        session.execute(stmt)
+                        session.execute(insert(MatchPlayers).values(match_players))
 
-                        stmt = delete(TakenMatches).where(TakenMatches.region == region, TakenMatches.id == id)
-                        session.execute(stmt)
+                        timelines = []
+                        for is_blue_team in (True, False):
+                            for role in (Roles.Top, Roles.Jungle, Roles.Mid, Roles.Bot, Roles.Support, None):
+                                timelines.append({
+                                    'region': region,
+                                    'match_id': id,
+                                    'role': role,
+                                    'is_blue_team': is_blue_team,
+                                })
+                        
+                        session.execute(insert(Timelines).values(timelines))
+
+                        df = pandas.read_sql(select(Timelines.id, Timelines.role, Timelines.is_blue_team)
+                                             .where(Timelines.region == region, Timelines.match_id == id), session.connection())
+                        role_timelines_dict = {}
+                        for _, row in df.iterrows():
+                            role_timelines_dict[(row['role'], row['is_blue_team'])] = row['id']
+
+                        result = handle_request(Request(RequestType.GET_TIMELINE,
+                                                        riot_match_id=operation['riot_match_id'],
+                                                        riot_id_role_dict=riot_id_role_dict,
+                                                        role_timelines_dict=role_timelines_dict))
+
+
+                        session.execute(delete(TakenMatches).where(TakenMatches.region == region, TakenMatches.id == id))
 
                         session.commit()
                         logger.info('Inserted match-player info into database.')

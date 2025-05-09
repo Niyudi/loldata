@@ -9,7 +9,7 @@ import requests
 import logger
 from constants import (CALL_INTERVAL, DEFAULT_RETRIES, DEFAULT_RETRY_INTERVAL, END_TTIMESTAMP, MAX_ERRORS_PER_WINDOW,
                        MAX_TIMEOUTS_PER_WINDOW, PST_TIMEZONE, RIOT_API_KEY, START_TIMESTAMP, WINDOW_SIZE)
-from db_models.static import Ranks, Regions, Roles
+from db_models.static import ObjectiveTypes, Ranks, Regions, Roles, StructureTypes
 
 type Json = Any # Redundant but shows intention plz don't remove thx
 
@@ -29,6 +29,7 @@ class RequestType(Enum):
     GET_MATCH = auto()
     GET_MATCH_LIST = auto()
     GET_RANK = auto()
+    GET_TIMELINE = auto()
 
 
 class Request:
@@ -165,7 +166,57 @@ def handle_request(request: Request) -> Json:
                 'rank': rank,
                 'lp': lp,
             }
+        case RequestType.GET_TIMELINE:
+            logger.info(f'Received GET_TIMELINE request for match id "{request["riot_match_id"]}".')
 
+            json = _time_get_request(f'https://americas.api.riotgames.com/lol/match/v5/matches/{request["riot_match_id"]}/timeline')['info']
+
+            participants: dict[int, (Roles, bool)] = {}
+            for participant_dict in json['participants']:
+                participants[participant_dict['participantId']] = request['riot_id_role_dict'][participant_dict['puuid']]
+            
+            item_timelines: dict[(Roles, bool), list[tuple[int, int, str]]] = {}
+            for participant_id in range(1, 11):
+                item_timelines[participants[participant_id]] = []
+            
+            result = []
+            for frame in json['frames']:
+                for event in frame['events']:  #TODO other types
+                    match event['type']:
+                        case 'BUILDING_KILL':
+                            result.append({
+                                'type': 'STRUCTURE',
+                                'player': participants[event['killerId']] if event['killerId'] != 0 else (None, event['teamId'] == '100'),
+                                'timestamp': frame['timestamp'],
+                                'type': StructureTypes.from_riot_type(event['buildingType'],
+                                                                      event['laneType'],
+                                                                      event['towerType'] if 'towerType' in event else None),
+                                'assist_roles': [participants[x] for x in event['assistingParticipantIds']] if 'assistingParticipantIds' in event else [],
+                            })
+                        case 'ELITE_MONSTER_KILL':
+                            result.append({
+                                'type': 'OBJECTIVE',
+                                'player': participants[event['killerId']] if event['killerId'] != 0 else (None, event['teamId'] == '100'),
+                                'timestamp': frame['timestamp'],
+                                'type': ObjectiveTypes.from_riot_type(event['monsterType'],
+                                                                      event['monsterSubtype'] if 'monsterSubtype' in event else None),
+                                'assist_roles': [participants[x] for x in event['assistingParticipantIds']] if 'assistingParticipantIds' in event else [],
+                            })
+                        case 'ITEM_DESTROYED':
+                            item_timelines[participants[event['participantId']]].append((event['timestamp'], -int(event['itemId']), 'destroyed'))
+                        case 'ITEM_PURCHASED':
+                            item_timelines[participants[event['participantId']]].append((event['timestamp'], int(event['itemId']), 'purchased'))
+                        case 'ITEM_UNDO':
+                            if event['afterId'] != 0:
+                                item_timelines[participants[event['participantId']]].append((event['timestamp'], int(event['afterId']), 'undo'))
+                            if event['beforeId'] != 0:
+                                item_timelines[participants[event['participantId']]].append((event['timestamp'], -int(event['beforeId']), 'undo'))
+            
+            for (role, is_blue_team), timeline in item_timelines.items():
+                timeline = sorted(timeline, key= lambda x: x[0])
+                while len(timeline) > 0:
+                    break
+            
 
 ###########
 # Private #

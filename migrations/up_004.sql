@@ -7,7 +7,7 @@ CREATE TABLE match_data.timelines (
 	role           static.roles,
 	is_blue_team   boolean NOT NULL,
     PRIMARY KEY ("id"),
-    FOREIGN KEY (region, match_id) REFERENCES registry.matches (region, match_id),
+    FOREIGN KEY (region, match_id) REFERENCES registry.matches (region, id),
     UNIQUE (region, match_id, role, is_blue_team)
 );
 
@@ -54,7 +54,7 @@ CREATE TABLE match_data.timeline_kills (
 );
 
 CREATE TYPE static.objective_types AS ENUM (
-    'ATHAKAN',
+    'ATAKHAN',
     'BARON',
     'DRAKE_CHEMTECH',
     'DRAKE_CLOUD',
@@ -76,7 +76,8 @@ CREATE TABLE match_data.timeline_objectives (
 	FOREIGN KEY (timeline_id) REFERENCES match_data.timelines (id)
 );
 
-CREATE TYPE static.strucutre_types AS ENUM (
+CREATE TYPE static.structure_types AS ENUM (
+    'TURRET_NEXUS'
     'TURRET_T1_TOP',
     'TURRET_T1_MID',
     'TURRET_T1_BOT',
@@ -88,8 +89,7 @@ CREATE TYPE static.strucutre_types AS ENUM (
     'TURRET_T3_BOT',
     'INHIBITOR_TOP',
     'INHIBITOR_MID',
-    'INHIBITOR_BOT',
-    'TURRET_NEXUS'
+    'INHIBITOR_BOT'
 );
 
 CREATE TABLE match_data.timeline_structures (

@@ -9,7 +9,7 @@ from .base import Base
 class Players(Base):
     __tablename__ = "players"
 
-    id: Mapped[int] = mapped_column(INTEGER, primary_key=True)
+    id: Mapped[int] = mapped_column(INTEGER, primary_key=True, autoincrement=True)
     riot_id: Mapped[str] = mapped_column(CHAR(78), nullable=False)
 
     __table_args__ = (

@@ -62,8 +62,8 @@ CREATE TYPE static.roles AS ENUM (
 );
 
 CREATE TABLE "static".champions (
-	id     smallserial,
-	name   varchar(25) NOT NULL,
+	id     smallint GENERATED ALWAYS AS IDENTITY,
+	name   varchar(255) NOT NULL,
 	PRIMARY KEY (id),
 	UNIQUE (name)
 );

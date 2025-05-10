@@ -15,6 +15,7 @@ type Json = Any # Redundant but shows intention plz don't remove thx
 
 
 HEADERS: Json = { 'X-Riot-Token': RIOT_API_KEY }
+TRINKETS: list[int] = [3330, 3340, 3348, 3363, 3364]
 
 last_call: datetime = datetime.now()
 code_queue: Queue[int] = Queue(WINDOW_SIZE)
@@ -66,7 +67,7 @@ def handle_request(request: Request) -> Json:
 
             json = _time_get_request(f'https://americas.api.riotgames.com/lol/match/v5/matches/{request["riot_match_id"]}')
 
-            region, id = json['metadata']['matchId'].split('_')
+            region, riot_id = json['metadata']['matchId'].split('_')
             is_blue_win: bool = (None if bool(json['info']['participants'][0]['gameEndedInEarlySurrender']) else
                 bool(json['info']['participants'][0]['win']) if json['info']['participants'][0]['teamId'] == '100' else
                 not bool(json['info']['participants'][0]['win']))
@@ -118,7 +119,7 @@ def handle_request(request: Request) -> Json:
             
             return {
                 'region': Regions[region],
-                'id': int(id),
+                'riot_id': int(riot_id),
                 'patch': int('{:02}{:02}'.format(*(int(x) for x in json['info']['gameVersion'].split('.')[:2]))),
                 'time': int(json['info']['gameStartTimestamp']),
                 'duration': int(json['info']['gameDuration']),
@@ -141,7 +142,7 @@ def handle_request(request: Request) -> Json:
 
             logger.info(f'GET_MATCH_LIST fetched {len(result)} matches for riot id "{request["riot_id"]}".')
 
-            return [{'region': Regions[region], 'id': int(id)} for region, id in [x.split('_') for x in result]]
+            return [{'region': Regions[region], 'riot_id': int(riot_id)} for region, riot_id in [x.split('_') for x in result]]
         case RequestType.GET_RANK:
             logger.info(f'Received GET_RANK request for riot id "{request["riot_id"]}".')
 
@@ -179,51 +180,84 @@ def handle_request(request: Request) -> Json:
             for participant_id in range(1, 11):
                 item_timelines[participants[participant_id]] = []
             
-            result = []  # TODO snapshots
+            result = {
+                'ITEM': [],
+                'KILL': [],
+                'OBJECTIVE': [],
+                'SNAPSHOT': [],
+                'STRUCTURE': [],
+            }
             for frame in json['frames']:
+                for participant_id, snapshot in frame['participantFrames'].items():
+                    result['SNAPSHOT'].append({
+                        'timeline_id': request['timelines_dict'][participants[int(participant_id)]],
+                        'timestamp': frame['timestamp'],
+                        'crowd_control_time': snapshot['timeEnemySpentControlled'],
+                        'damage_magic': snapshot['damageStats']['magicDamageDone'],
+                        'damage_magic_champions': snapshot['damageStats']['magicDamageDoneToChampions'],
+                        'damage_magic_taken': snapshot['damageStats']['magicDamageTaken'],
+                        'damage_physical': snapshot['damageStats']['physicalDamageDone'],
+                        'damage_physical_champions': snapshot['damageStats']['physicalDamageDoneToChampions'],
+                        'damage_physical_taken': snapshot['damageStats']['physicalDamageTaken'],
+                        'damage_true': snapshot['damageStats']['trueDamageDone'],
+                        'damage_true_champions': snapshot['damageStats']['trueDamageDoneToChampions'],
+                        'damage_true_taken': snapshot['damageStats']['trueDamageTaken'],
+                        'experience': snapshot['xp'],
+                        'minions_killed': snapshot['minionsKilled'],
+                        'minions_killed_jungle': snapshot['jungleMinionsKilled'],
+                        'position_x': snapshot['position']['x'],
+                        'position_y': snapshot['position']['y'],
+                        'total_gold': snapshot['totalGold'],
+                    })
+
                 for event in frame['events']:
                     match event['type']:
                         case 'BUILDING_KILL':
-                            result.append({
-                                'timeline_type': 'STRUCTURE',
-                                'player': participants[event['killerId']] if event['killerId'] != 0 else (None, event['teamId'] == '100'),
-                                'timestamp': frame['timestamp'],
+                            result['STRUCTURE'].append({
+                                'timeline_id': request['timelines_dict'][participants[event['killerId']] if event['killerId'] != 0
+                                                                         else (None, event['teamId'] == '100')],
+                                'timestamp': event['timestamp'],
                                 'type': StructureTypes.from_riot_type(event['buildingType'],
                                                                       event['laneType'],
                                                                       event['towerType'] if 'towerType' in event else None),
-                                'assist_roles': [participants[x][0] for x in event['assistingParticipantIds']] if 'assistingParticipantIds' in event else [],
+                                'assist_timeline_ids': set(request['timelines_dict'][participants[participant_id]]
+                                                           for participant_id in event['assistingParticipantIds'])
+                                                           if 'assistingParticipantIds' in event else set(),
                             })
                         case 'CHAMPION_KILL':
-                            result.append({
-                                'timeline_type': 'KILL',
-                                'player': participants[event['killerId']] if event['killerId'] != 0 else (None, event['teamId'] == '100'),
-                                'timestamp': frame['timestamp'],
+                            result['KILL'].append({
+                                'timeline_id': request['timelines_dict'][participants[event['killerId']] if event['killerId'] != 0
+                                                                         else (None, not participants[event['victimId']][1])],
+                                'timestamp': event['timestamp'],
                                 'target_role': participants[event['victimId']][0],
-                                'assist_roles': [participants[x][0] for x in event['assistingParticipantIds']] if 'assistingParticipantIds' in event else [],
+                                'assist_timeline_ids': set(request['timelines_dict'][participants[participant_id]]
+                                                           for participant_id in event['assistingParticipantIds'])
+                                                           if 'assistingParticipantIds' in event else set(),
                             })
                         case 'ELITE_MONSTER_KILL':
-                            result.append({
-                                'timeline_type': 'OBJECTIVE',
-                                'player': participants[event['killerId']] if event['killerId'] != 0 else (None, event['teamId'] == '100'),
-                                'timestamp': frame['timestamp'],
+                            result['OBJECTIVE'].append({
+                                'timeline_id': request['timelines_dict'][participants[event['killerId']] if event['killerId'] != 0
+                                                                         else (None, event['killerTeamId'] == '100')],
+                                'timestamp': event['timestamp'],
                                 'type': ObjectiveTypes.from_riot_type(event['monsterType'],
                                                                       event['monsterSubType'] if 'monsterSubType' in event else None),
-                                'assist_roles': [participants[x][0] for x in event['assistingParticipantIds']
-                                                 if participants[x][1] == participants[event['killerId']][1]] if 'assistingParticipantIds' in event else [],
-                                'enemy_assist_roles': [participants[x][0] for x in event['assistingParticipantIds']
-                                                       if participants[x][1] != participants[event['killerId']][1]] if 'assistingParticipantIds' in event else [],
+                                'assist_timeline_ids': set(request['timelines_dict'][participants[participant_id]]
+                                                           for participant_id in event['assistingParticipantIds'])
+                                                           if 'assistingParticipantIds' in event else set(),
                             })
                         case 'ITEM_DESTROYED':
-                            item_timelines[participants[event['participantId']]].append((event['timestamp'], -int(event['itemId']), False))
+                            item_timelines[participants[event['participantId']]].append((event['timestamp'], -event['itemId'], False))
                         case 'ITEM_PURCHASED':
-                            item_timelines[participants[event['participantId']]].append((event['timestamp'], int(event['itemId']), False))
+                            item_timelines[participants[event['participantId']]].append((event['timestamp'], event['itemId'], False))
                         case 'ITEM_SOLD':
-                            item_timelines[participants[event['participantId']]].append((event['timestamp'], -int(event['itemId']), False))
+                            item_timelines[participants[event['participantId']]].append((event['timestamp'], -event['itemId'], False))
                         case 'ITEM_UNDO':
+                            if event['afterId'] in TRINKETS or event['beforeId'] in TRINKETS:  # Excludes trinkets from UNDO events.
+                                continue
                             if event['afterId'] != 0:
-                                item_timelines[participants[event['participantId']]].append((event['timestamp'], int(event['afterId']), True))
+                                item_timelines[participants[event['participantId']]].append((event['timestamp'], event['afterId'], True))
                             elif event['beforeId'] != 0:
-                                item_timelines[participants[event['participantId']]].append((event['timestamp'], -int(event['beforeId']), True))
+                                item_timelines[participants[event['participantId']]].append((event['timestamp'], -event['beforeId'], True))
                             else:
                                 raise Exception('OLHA ISSO AQUI PAE')
             
@@ -245,9 +279,8 @@ def handle_request(request: Request) -> Json:
                         i += 1
                 
                 for event in timeline:
-                    result.append({
-                        'timeline_type': 'ITEM',
-                        'player': (role, is_blue_team),
+                    result['ITEM'].append({
+                        'timeline_id': request['timelines_dict'][(role, is_blue_team)],
                         'timestamp': event[0],
                         'item_id': abs(event[1]),
                         'is_purchase': event[1] > 0,

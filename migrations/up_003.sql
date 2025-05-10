@@ -8,8 +8,7 @@ CREATE TABLE search.patch_players (
 );
 
 CREATE TABLE search.taken_matches (
-	region   static.regions,
-	id       bigint,
-	PRIMARY KEY (region, id),
-	FOREIGN KEY (region, id) REFERENCES registry.matches (region, id)
+	id   integer,
+	PRIMARY KEY (id),
+	FOREIGN KEY (id) REFERENCES registry.matches (id)
 );

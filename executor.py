@@ -11,7 +11,8 @@ from sqlalchemy.orm import Session
 import logger
 from config import GET_PLAYERS, MINIMUM_RANK
 from constants import IS_FINISHED_PATCH, MATCH_BATCH_SIZE, TARGET_PATCH
-from db_models.match_data import Timelines
+from db_models.match_data import (TimelineItems, TimelineKills, TimelineKillsAssists, TimelineObjectives, TimelineObjectivesAssists,
+                                  TimelineSnapshots, Timelines, TimelineStructures, TimelineStructuresAssists)
 from db_models.registry import Matches, MatchPlayers, Players, PlayerRanks
 from db_models.search import PatchPlayers, TakenMatches
 from db_models.static import Champions, Ranks, Regions, Roles
@@ -104,8 +105,8 @@ def run(session: Session):
                     case OperationType.GET_UNREGISTERED_MATCHES:
                         logger.info(f'Getting matches from db with no data...')
 
-                        stmt = (select(Matches.region, Matches.id)
-                                .join(TakenMatches, and_(Matches.region == TakenMatches.region, Matches.id == TakenMatches.id), isouter=True)
+                        stmt = (select(Matches.id, Matches.region, Matches.riot_id)
+                                .join(TakenMatches, and_(Matches.id == TakenMatches.id), isouter=True)
                                 .where(Matches.patch.is_(None), TakenMatches.id.is_(None))
                                 .limit(MATCH_BATCH_SIZE))
                         df = pandas.read_sql(stmt, session.connection())
@@ -115,9 +116,9 @@ def run(session: Session):
                             operations.put_nowait(Operation(OperationType.GET_PLAYER))
                             continue
                         
-                        taken_matches = list(df.itertuples(index=False, name=None))
+                        taken_matches = list(df[['id']].itertuples(index=False, name=None))
 
-                        stmt = insert(TakenMatches).values(df.to_dict(orient='records'))
+                        stmt = insert(TakenMatches).values(df[['id']].to_dict(orient='records'))
                         try:
                             session.execute(stmt)
                             session.commit()
@@ -128,17 +129,20 @@ def run(session: Session):
                             continue
 
                         logger.info(f'Got {len(df.index)} matches wihtout data. Queueing data requests...')
-                        for riot_match_id in df.apply(lambda row: f'{row["region"].name}_{row["id"]}', axis=1):
-                            operations.put_nowait(Operation(OperationType.REGISTER_MATCH, riot_match_id=riot_match_id))
+                        for _, row in df.iterrows():
+                            operations.put_nowait(Operation(OperationType.REGISTER_MATCH,
+                                                            match_id=row['id'],
+                                                            riot_match_id=f'{row["region"].name}_{row["riot_id"]}'))
                     # REGISTER_MATCH: Saves match in database.
                     case OperationType.REGISTER_MATCH:
+                        match_id = operation['match_id']
                         logger.info(f'Making request for match of id {operation["riot_match_id"]}...')
                         result = handle_request(Request(RequestType.GET_MATCH, riot_match_id=operation['riot_match_id']))
 
-                        region, id, match_players = result.pop('region'), result.pop('id'), result.pop('players')
-                        stmt = update(Matches).where(Matches.region == region, Matches.id == id).values(result)
+                        region, riot_id, match_players = result.pop('region'), result.pop('riot_id'), result.pop('players')
+                        stmt = update(Matches).where(Matches.region == region, Matches.riot_id == riot_id).values(result)
                         session.execute(stmt)
-                        logger.info(f'Inserting match with id {region.name}_{id} into database.')
+                        logger.info(f'Inserting match with id {region.name}_{riot_id} into database.')
                         if result['is_blue_win'] is None:
                             session.commit()
                             logger.info('Invalid match! Skipping aditional match info...')
@@ -150,8 +154,7 @@ def run(session: Session):
                             riot_id_role_dict[match_players[i]['puuid']] = (match_players[i]['role'], match_players[i]['is_blue_team'])
 
                             # Adds match info to players
-                            match_players[i]['region'] = region
-                            match_players[i]['match_id'] = id
+                            match_players[i]['match_id'] = match_id
 
                             # Player registry
                             match_players[i]['player_id'] = session.execute(select(Players.id).where(Players.riot_id == match_players[i]['puuid'])).scalar()
@@ -168,9 +171,8 @@ def run(session: Session):
                             
                             match_players[i].pop('puuid')
 
-                            # Champion regsitry
+                            # Champion regsitry (comment after all champions registered for performance)
                             df = df_champions[df_champions['name'] == match_players[i]['champion_name']]
-                            
                             if len(df.index) == 0:
                                 stmt = (insert(Champions)
                                         .values({'name': match_players[i]['champion_name']}))
@@ -178,7 +180,8 @@ def run(session: Session):
                                 df_champions = pandas.read_sql(select(Champions), session.connection())
                                 df = df_champions[df_champions['name'] == match_players[i]['champion_name']]
                                 logger.warning(f'New champion "{match_players[i]["champion_name"]}" inserted! Now there are {len(df_champions.index)} champions registered.')
-                            
+                            # Champion registry end
+
                             match_players[i].pop('champion_name')
                             match_players[i]['champion_id'] = int(df['id'].iloc[0])
 
@@ -188,45 +191,84 @@ def run(session: Session):
                         for is_blue_team in (True, False):
                             for role in (Roles.Top, Roles.Jungle, Roles.Mid, Roles.Bot, Roles.Support, None):
                                 timelines.append({
-                                    'region': region,
-                                    'match_id': id,
+                                    'match_id': match_id,
                                     'role': role,
                                     'is_blue_team': is_blue_team,
                                 })
                         
                         session.execute(insert(Timelines).values(timelines))
 
+                        timelines_dict: dict[tuple[Roles, bool], int] = {}
                         df = pandas.read_sql(select(Timelines.id, Timelines.role, Timelines.is_blue_team)
-                                             .where(Timelines.region == region, Timelines.match_id == id), session.connection())
-                        role_timelines_dict = {}
+                                             .where(Timelines.match_id == match_id), session.connection())
                         for _, row in df.iterrows():
-                            role_timelines_dict[(row['role'], row['is_blue_team'])] = row['id']
+                            timelines_dict[(row['role'], row['is_blue_team'])] = row['id']
 
                         result = handle_request(Request(RequestType.GET_TIMELINE,
                                                         riot_match_id=operation['riot_match_id'],
                                                         riot_id_role_dict=riot_id_role_dict,
-                                                        role_timelines_dict=role_timelines_dict))
+                                                        timelines_dict=timelines_dict))
                         
-                        for event in result:  # TODO handle all cases
-                            match event['timeline_type']:
+                        for type, events in result.items():
+                            if len(events) == 0:
+                                logger.info(f'No {type} events to register!')
+                                continue
+                            logger.info(f'Inserting {len(events)} {type} events into database...')
+                            match type:
                                 case 'ITEM':
-                                    pass
+                                    session.execute(insert(TimelineItems).values(events))
                                 case 'KILL':
-                                    pass
+                                    assist_timeline_ids = [event.pop('assist_timeline_ids') for event in events]
+                                    kill_ids = session.execute(insert(TimelineKills).values(events).returning(TimelineKills.id)).all()
+                                    
+                                    assist_events = []
+                                    for i in range(len(assist_timeline_ids)):
+                                        for timeline_id in assist_timeline_ids[i]:
+                                            assist_events.append({
+                                                'timeline_id': timeline_id,
+                                                'kill_id': kill_ids[i][0],
+                                            })
+                                    
+                                    if len(assist_events) > 0:
+                                        session.execute(insert(TimelineKillsAssists).values(assist_events))
                                 case 'OBJECTIVE':
-                                    pass
+                                    assist_timeline_ids = [event.pop('assist_timeline_ids') for event in events]
+                                    objective_ids = session.execute(insert(TimelineObjectives).values(events).returning(TimelineObjectives.id)).all()
+                                    
+                                    assist_events = []
+                                    for i in range(len(assist_timeline_ids)):
+                                        for timeline_id in assist_timeline_ids[i]:
+                                            assist_events.append({
+                                                'timeline_id': timeline_id,
+                                                'objective_id': objective_ids[i][0],
+                                            })
+                                    
+                                    if len(assist_events) > 0:
+                                        session.execute(insert(TimelineObjectivesAssists).values(assist_events))
+                                case 'SNAPSHOT':
+                                    session.execute(insert(TimelineSnapshots).values(events))
                                 case 'STRUCTURE':
-                                    pass
+                                    assist_timeline_ids = [event.pop('assist_timeline_ids') for event in events]
+                                    structure_ids = session.execute(insert(TimelineStructures).values(events).returning(TimelineStructures.id)).all()
+                                    
+                                    assist_events = []
+                                    for i in range(len(assist_timeline_ids)):
+                                        for timeline_id in assist_timeline_ids[i]:
+                                            assist_events.append({
+                                                'timeline_id': timeline_id,
+                                                'structure_id': structure_ids[i][0],
+                                            })
+                                    
+                                    if len(assist_events) > 0:
+                                        session.execute(insert(TimelineStructuresAssists).values(assist_events))
 
-
-                        session.execute(delete(TakenMatches).where(TakenMatches.region == region, TakenMatches.id == id))
+                        session.execute(delete(TakenMatches).where(TakenMatches.id == match_id))
 
                         session.commit()
                         logger.info('Inserted match-player info into database.')
     finally:
         session.rollback()
-        for region, id in taken_matches:
-            session.execute(delete(TakenMatches).where(TakenMatches.region == region, TakenMatches.id == id))
+        session.execute(delete(TakenMatches).where(TakenMatches.id.in_(taken_matches)))
         session.commit()
 
 

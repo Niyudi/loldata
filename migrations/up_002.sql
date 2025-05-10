@@ -1,7 +1,7 @@
 CREATE SCHEMA registry;
 
 CREATE TABLE registry.players (
-	id        serial,
+	id        integer GENERATED ALWAYS AS IDENTITY,
 	riot_id   char(78) NOT NULL,
 	PRIMARY KEY (id),
 	UNIQUE (riot_id)
@@ -54,28 +54,29 @@ CREATE CONSTRAINT TRIGGER enforce_rank
     FOR EACH ROW EXECUTE FUNCTION registry.enforce_rank();
 
 CREATE TABLE registry.matches (
-	region        static.regions,
-	id            bigint,
+    id            integer GENERATED ALWAYS AS IDENTITY,
+	region        static.regions NOT NULL,
+	riot_id       bigint NOT NULL,
 	patch         smallint,
 	time          bigint,
 	duration      smallint,
 	is_blue_win   boolean,
-	PRIMARY KEY (region, id)
+	PRIMARY KEY (id),
+    UNIQUE (region, riot_id)
 );
 
 CREATE TABLE registry.match_players (
-	region         static.regions,
-	match_id       bigint,
+	match_id       integer,
 	player_id      integer,
-	champion_id    smallint NOT NULL,
+	champion_id    smallint,
 	role           static.roles NOT NULL,
 	is_blue_team   boolean NOT NULL,
-	PRIMARY KEY (region, match_id, player_id),
-	FOREIGN KEY (region, match_id) REFERENCES registry.matches (region, id),
+	PRIMARY KEY (match_id, player_id),
+	FOREIGN KEY (match_id) REFERENCES registry.matches (id),
 	FOREIGN KEY (player_id) REFERENCES registry.players (id),
 	FOREIGN KEY (champion_id) REFERENCES static.champions (id),
-	UNIQUE (region, match_id, role, is_blue_team),
-	UNIQUE (region, match_id, champion_id)
+	UNIQUE (match_id, role, is_blue_team),
+	UNIQUE (match_id, champion_id)
 );
 
 CREATE FUNCTION registry.enforce_valid_matches() RETURNS trigger AS $$

@@ -10,9 +10,11 @@ desired server.
 
 To use the code, you need to create a folder called "keys" with two files, "DB_URI" and "RIOT_API_KEY":
 
-keys/
- |- DB_URI
- |- RIOT_API_KEY
+```
+keys
+   |-- DB_URI
+   |-- RIOT_API_KEY
+```
 
 In the "DB_URI" file, write the URI to connect to your PostgreSQL database. In the "RIOT_API_KEY", write your riot API
 key.

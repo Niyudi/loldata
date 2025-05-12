@@ -16,13 +16,11 @@ from db_models.match_data import (TimelineItems, TimelineKills, TimelineKillsAss
 from db_models.registry import Matches, MatchPlayers, Players, PlayerRanks
 from db_models.search import PatchPlayers, TakenMatches
 from db_models.static import Champions, Ranks, Regions, Roles
-from request_handler import Request, RequestType
+from request_handler import Request, RequestType, TimelineError
 from request_handler import handle_request
 
 
 def run(session: Session):
-    df_champions = pandas.read_sql(select(Champions), session.connection())
-
     if GET_PLAYERS:
         logger.info('Fetching players from leagues to begin search.')
         rank = Ranks.CHALLENGER
@@ -136,14 +134,13 @@ def run(session: Session):
                     # REGISTER_MATCH: Saves match in database.
                     case OperationType.REGISTER_MATCH:
                         match_id = operation['match_id']
-                        logger.info(f'Making request for match of id {operation["riot_match_id"]}...')
-                        result = handle_request(Request(RequestType.GET_MATCH, riot_match_id=operation['riot_match_id']))
+                        logger.info(f'Making request for match id {operation["match_id"]}...')
+                        match_result = handle_request(Request(RequestType.GET_MATCH, riot_match_id=operation['riot_match_id']))
 
-                        region, riot_id, match_players = result.pop('region'), result.pop('riot_id'), result.pop('players')
-                        stmt = update(Matches).where(Matches.region == region, Matches.riot_id == riot_id).values(result)
-                        session.execute(stmt)
-                        logger.info(f'Inserting match with id {region.name}_{riot_id} into database.')
-                        if result['is_blue_win'] is None:
+                        match_players = match_result.pop('players')
+                        session.execute(update(Matches).where(Matches.id == match_id).values(match_result))
+                        logger.info(f'Inserting match with id {match_id} into database.')
+                        if match_result['is_blue_win'] is None:
                             session.commit()
                             logger.info('Invalid match! Skipping aditional match info...')
                             continue
@@ -171,19 +168,16 @@ def run(session: Session):
                             
                             match_players[i].pop('puuid')
 
-                            # Champion regsitry (comment after all champions registered for performance)
-                            df = df_champions[df_champions['name'] == match_players[i]['champion_name']]
-                            if len(df.index) == 0:
-                                stmt = (insert(Champions)
-                                        .values({'name': match_players[i]['champion_name']}))
-                                session.execute(stmt)
-                                df_champions = pandas.read_sql(select(Champions), session.connection())
-                                df = df_champions[df_champions['name'] == match_players[i]['champion_name']]
-                                logger.warning(f'New champion "{match_players[i]["champion_name"]}" inserted! Now there are {len(df_champions.index)} champions registered.')
-                            # Champion registry end
+                            # Champion regsitry
+                            champion_id = session.execute(select(Champions.id).where(Champions.name == match_players[i]['champion_name'])).scalar()
+                            if champion_id is None:
+                                champion_id = session.execute(insert(Champions)
+                                                              .values({'name': match_players[i]['champion_name']})
+                                                              .returning(Champions.id)).scalar()
+                                logger.warning(f'New champion "{match_players[i]["champion_name"]}" inserted!')
 
                             match_players[i].pop('champion_name')
-                            match_players[i]['champion_id'] = int(df['id'].iloc[0])
+                            match_players[i]['champion_id'] = champion_id
 
                         session.execute(insert(MatchPlayers).values(match_players))
 
@@ -204,10 +198,18 @@ def run(session: Session):
                         for _, row in df.iterrows():
                             timelines_dict[(row['role'], row['is_blue_team'])] = row['id']
 
-                        result = handle_request(Request(RequestType.GET_TIMELINE,
-                                                        riot_match_id=operation['riot_match_id'],
-                                                        riot_id_role_dict=riot_id_role_dict,
-                                                        timelines_dict=timelines_dict))
+                        try:
+                            result = handle_request(Request(RequestType.GET_TIMELINE,
+                                                            riot_match_id=operation['riot_match_id'],
+                                                            riot_id_role_dict=riot_id_role_dict,
+                                                            timelines_dict=timelines_dict))
+                        except TimelineError:
+                            session.rollback()
+                            match_result['is_blue_win'] = None
+                            session.execute(update(Matches).where(Matches.id == match_id).values(match_result))
+                            session.commit()
+                            logger.warning(f'Timeline integrity error for match id {match_id}! Skiping match and setting as invalid.')
+                            continue
                         
                         for type, events in result.items():
                             if len(events) == 0:

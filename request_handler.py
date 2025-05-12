@@ -43,6 +43,10 @@ class Request:
         return self._params[key]
 
 
+class TimelineError(Exception):
+    pass
+
+
 def handle_request(request: Request) -> Json:
     match request.type:
         case RequestType.GET_LEAGUE:
@@ -67,7 +71,6 @@ def handle_request(request: Request) -> Json:
 
             json = _time_get_request(f'https://americas.api.riotgames.com/lol/match/v5/matches/{request["riot_match_id"]}')
 
-            region, riot_id = json['metadata']['matchId'].split('_')
             is_blue_win: bool = (None if bool(json['info']['participants'][0]['gameEndedInEarlySurrender']) else
                 bool(json['info']['participants'][0]['win']) if json['info']['participants'][0]['teamId'] == '100' else
                 not bool(json['info']['participants'][0]['win']))
@@ -118,8 +121,6 @@ def handle_request(request: Request) -> Json:
             logger.info(f'GET_MATCH fetched match with id "{request["riot_match_id"]}".')
             
             return {
-                'region': Regions[region],
-                'riot_id': int(riot_id),
                 'patch': int('{:02}{:02}'.format(*(int(x) for x in json['info']['gameVersion'].split('.')[:2]))),
                 'time': int(json['info']['gameStartTimestamp']),
                 'duration': int(json['info']['gameDuration']),
@@ -252,8 +253,6 @@ def handle_request(request: Request) -> Json:
                         case 'ITEM_SOLD':
                             item_timelines[participants[event['participantId']]].append((event['timestamp'], -event['itemId'], False))
                         case 'ITEM_UNDO':
-                            if event['afterId'] in TRINKETS or event['beforeId'] in TRINKETS:  # Excludes trinkets from UNDO events.
-                                continue
                             if event['afterId'] != 0:
                                 item_timelines[participants[event['participantId']]].append((event['timestamp'], event['afterId'], True))
                             elif event['beforeId'] != 0:
@@ -268,12 +267,14 @@ def handle_request(request: Request) -> Json:
                     if timeline[i][2]:
                         item = timeline.pop(i)[1]
                         j = i - 1
-                        while True:
+                        while j >= 0:
                             if timeline[j][1] + item == 0:
                                 timeline.pop(j)
                                 break
                             else:
                                 j -= 1
+                        if j < 0:
+                            raise TimelineError
                         i -= 1
                     else:
                         i += 1
@@ -287,8 +288,6 @@ def handle_request(request: Request) -> Json:
                     })
             
             return result
-
-
             
 
 ###########

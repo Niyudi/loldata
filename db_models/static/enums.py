@@ -2,6 +2,14 @@ from enum import auto, Enum
 from functools import total_ordering
 
 
+class ItemOperationType(Enum):
+    DESTROYED = auto()
+    PURCHASED = auto()
+    SOLD = auto()
+    UNDO_CREATE = auto()
+    UNDO_DESTROY = auto()
+
+
 class ObjectiveTypes(Enum):
     ATAKHAN = auto()
     BARON = auto()

@@ -16,7 +16,7 @@ from db_models.match_data import (TimelineItems, TimelineKills, TimelineKillsAss
 from db_models.registry import Matches, MatchPlayers, Players, PlayerRanks
 from db_models.search import PatchPlayers, TakenMatches
 from db_models.static import Champions, Ranks, Regions, Roles
-from request_handler import Request, RequestType, TimelineError
+from request_handler import Request, RequestType
 from request_handler import handle_request
 
 
@@ -198,18 +198,10 @@ def run(session: Session):
                         for _, row in df.iterrows():
                             timelines_dict[(row['role'], row['is_blue_team'])] = row['id']
 
-                        try:
-                            result = handle_request(Request(RequestType.GET_TIMELINE,
-                                                            riot_match_id=operation['riot_match_id'],
-                                                            riot_id_role_dict=riot_id_role_dict,
-                                                            timelines_dict=timelines_dict))
-                        except TimelineError:
-                            session.rollback()
-                            match_result['is_blue_win'] = None
-                            session.execute(update(Matches).where(Matches.id == match_id).values(match_result))
-                            session.commit()
-                            logger.warning(f'Timeline integrity error for match id {match_id}! Skiping match and setting as invalid.')
-                            continue
+                        result = handle_request(Request(RequestType.GET_TIMELINE,
+                                                        riot_match_id=operation['riot_match_id'],
+                                                        riot_id_role_dict=riot_id_role_dict,
+                                                        timelines_dict=timelines_dict))
                         
                         for type, events in result.items():
                             if len(events) == 0:

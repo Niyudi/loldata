@@ -1,9 +1,10 @@
-from sqlalchemy import ForeignKeyConstraint, UniqueConstraint
+from sqlalchemy import ForeignKeyConstraint
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
-from sqlalchemy.dialects.postgresql import BOOLEAN, INTEGER, SMALLINT
+from sqlalchemy.dialects.postgresql import ENUM, INTEGER, SMALLINT
 
 from .base import Base
+from ..static import ItemOperationType
 
 
 class TimelineItems(Base):
@@ -13,7 +14,7 @@ class TimelineItems(Base):
     timeline_id: Mapped[int] = mapped_column(INTEGER)
     timestamp: Mapped[int] = mapped_column(INTEGER, nullable=False)
     item_id: Mapped[int] = mapped_column(SMALLINT, nullable=False)
-    is_purchase: Mapped[bool] = mapped_column(BOOLEAN, nullable=False)
+    operation_type: Mapped[ItemOperationType] = mapped_column(ENUM(ItemOperationType, create_type=False), nullable=False)
 
     __table_args__ = (
         ForeignKeyConstraint(['timeline_id'], ['match_data.timelines.id']),

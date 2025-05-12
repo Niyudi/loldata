@@ -35,12 +35,20 @@ CREATE TABLE match_data.timeline_snapshots(
     UNIQUE (timeline_id, timestamp)
 );
 
+CREATE TYPE static.item_operations_type AS ENUM (
+    'DESTROYED',
+    'PURCHASED',
+    'SOLD',
+    'UNDO_CREATE',
+    'UNDO_DESTROY'
+);
+
 CREATE TABLE match_data.timeline_items (
-    id            integer GENERATED ALWAYS AS IDENTITY,
-    timeline_id   integer,
-    timestamp     integer NOT NULL,
-    item_id       smallint NOT NULL,
-    is_purchase   boolean NOT NULL,
+    id               integer GENERATED ALWAYS AS IDENTITY,
+    timeline_id      integer,
+    timestamp        integer NOT NULL,
+    item_id          smallint NOT NULL,
+    operation_type   static.item_operations_type NOT NULL,
     PRIMARY KEY (id),
 	FOREIGN KEY (timeline_id) REFERENCES match_data.timelines (id)
 );

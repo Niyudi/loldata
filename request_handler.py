@@ -9,7 +9,8 @@ import requests
 import logger
 from constants import (CALL_INTERVAL, DEFAULT_RETRIES, DEFAULT_RETRY_INTERVAL, END_TTIMESTAMP, MAX_ERRORS_PER_WINDOW,
                        MAX_TIMEOUTS_PER_WINDOW, PST_TIMEZONE, RIOT_API_KEY, START_TIMESTAMP, WINDOW_SIZE)
-from db_models.static import ObjectiveTypes, Ranks, Regions, Roles, StructureTypes
+from db_models.static import (ItemOperationType, ObjectiveTypes, Ranks, Regions, Roles,
+                              StructureTypes)
 
 type Json = Any # Redundant but shows intention plz don't remove thx
 
@@ -41,10 +42,6 @@ class Request:
 
     def __getitem__(self, key: str):
         return self._params[key]
-
-
-class TimelineError(Exception):
-    pass
 
 
 def handle_request(request: Request) -> Json:
@@ -177,10 +174,6 @@ def handle_request(request: Request) -> Json:
             for participant_dict in json['participants']:
                 participants[participant_dict['participantId']] = request['riot_id_role_dict'][participant_dict['puuid']]
             
-            item_timelines: dict[(Roles, bool), list[tuple[int, int, str]]] = {}
-            for participant_id in range(1, 11):
-                item_timelines[participants[participant_id]] = []
-            
             result = {
                 'ITEM': [],
                 'KILL': [],
@@ -247,45 +240,43 @@ def handle_request(request: Request) -> Json:
                                                            if 'assistingParticipantIds' in event else set(),
                             })
                         case 'ITEM_DESTROYED':
-                            item_timelines[participants[event['participantId']]].append((event['timestamp'], -event['itemId'], False))
+                            result['ITEM'].append({
+                                'timeline_id': request['timelines_dict'][participants[event['participantId']]],
+                                'timestamp': event['timestamp'],
+                                'item_id': event['itemId'],
+                                'operation_type': ItemOperationType.DESTROYED,
+                            })
                         case 'ITEM_PURCHASED':
-                            item_timelines[participants[event['participantId']]].append((event['timestamp'], event['itemId'], False))
+                            result['ITEM'].append({
+                                'timeline_id': request['timelines_dict'][participants[event['participantId']]],
+                                'timestamp': event['timestamp'],
+                                'item_id': event['itemId'],
+                                'operation_type': ItemOperationType.PURCHASED,
+                            })
                         case 'ITEM_SOLD':
-                            item_timelines[participants[event['participantId']]].append((event['timestamp'], -event['itemId'], False))
+                            result['ITEM'].append({
+                                'timeline_id': request['timelines_dict'][participants[event['participantId']]],
+                                'timestamp': event['timestamp'],
+                                'item_id': event['itemId'],
+                                'operation_type': ItemOperationType.SOLD,
+                            })
                         case 'ITEM_UNDO':
                             if event['afterId'] != 0:
-                                item_timelines[participants[event['participantId']]].append((event['timestamp'], event['afterId'], True))
+                                result['ITEM'].append({
+                                    'timeline_id': request['timelines_dict'][participants[event['participantId']]],
+                                    'timestamp': event['timestamp'],
+                                    'item_id': event['afterId'],
+                                    'operation_type': ItemOperationType.UNDO_DESTROY,
+                                })
                             elif event['beforeId'] != 0:
-                                item_timelines[participants[event['participantId']]].append((event['timestamp'], -event['beforeId'], True))
+                                result['ITEM'].append({
+                                    'timeline_id': request['timelines_dict'][participants[event['participantId']]],
+                                    'timestamp': event['timestamp'],
+                                    'item_id': event['beforeId'],
+                                    'operation_type': ItemOperationType.UNDO_CREATE,
+                                })
                             else:
                                 raise Exception('OLHA ISSO AQUI PAE')
-            
-            for (role, is_blue_team), timeline in item_timelines.items():
-                timeline = sorted(timeline, key=lambda x: x[0])
-                i = 0
-                while i < len(timeline):
-                    if timeline[i][2]:
-                        item = timeline.pop(i)[1]
-                        j = i - 1
-                        while j >= 0:
-                            if timeline[j][1] + item == 0:
-                                timeline.pop(j)
-                                break
-                            else:
-                                j -= 1
-                        if j < 0:
-                            raise TimelineError
-                        i -= 1
-                    else:
-                        i += 1
-                
-                for event in timeline:
-                    result['ITEM'].append({
-                        'timeline_id': request['timelines_dict'][(role, is_blue_team)],
-                        'timestamp': event[0],
-                        'item_id': abs(event[1]),
-                        'is_purchase': event[1] > 0,
-                    })
             
             return result
             

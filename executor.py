@@ -61,23 +61,25 @@ def run(session: Session):
                         logger.info(f'Making request for match list of player with id {player_id}...')
                         
                         if IS_FINISHED_PATCH:
-                            stmt = select(PatchPlayers).where(PatchPlayers.patch == TARGET_PATCH, PatchPlayers.player_id == player_id)
-                            df = pandas.read_sql(stmt, session.connection())
+                            df = pandas.read_sql(select(PatchPlayers)
+                                                 .where(PatchPlayers.patch == TARGET_PATCH, PatchPlayers.player_id == player_id), session.connection())
 
                             if len(df.index) != 0:
                                 continue
 
+                            session.execute(insert(PatchPlayers)
+                                            .values({'patch': TARGET_PATCH, 'player_id': player_id})
+                                            .on_conflict_do_nothing())
+
                         result = handle_request(Request(RequestType.GET_MATCH_LIST, riot_id=operation["riot_id"]))
-                        stmt = insert(Matches).values(result).on_conflict_do_nothing()
-                        session.execute(stmt)
-
-                        if IS_FINISHED_PATCH:
-                            stmt = insert(PatchPlayers).values({'patch': TARGET_PATCH, 'player_id': player_id}).on_conflict_do_nothing()
-                            session.execute(stmt)
-                        
-                        session.commit()
-
-                        operations.put_nowait(Operation(OperationType.GET_UNREGISTERED_MATCHES))
+                        if len(result) == 0:
+                            logger.info('Player has no matches in patch, searching for another player...')
+                            session.commit()
+                            operations.put_nowait(Operation(OperationType.GET_PLAYER))
+                        else:
+                            session.execute(insert(Matches).values(result).on_conflict_do_nothing())
+                            session.commit()
+                            operations.put_nowait(Operation(OperationType.GET_UNREGISTERED_MATCHES))
                     # GET_PLAYER: Gets players from database that have not had their matches registered yet and are within search criteria.
                     case OperationType.GET_PLAYER:
                         logger.info('Getting from database player to register matches...')

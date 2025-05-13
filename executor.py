@@ -141,6 +141,7 @@ def run(session: Session):
                         session.execute(update(Matches).where(Matches.id == match_id).values(match_result))
                         logger.info(f'Inserting match with id {match_id} into database.')
                         if match_result['is_blue_win'] is None:
+                            session.execute(delete(TakenMatches).where(TakenMatches.id == match_id))
                             session.commit()
                             logger.info('Invalid match! Skipping aditional match info...')
                             continue
@@ -257,7 +258,6 @@ def run(session: Session):
                                         session.execute(insert(TimelineStructuresAssists).values(assist_events))
 
                         session.execute(delete(TakenMatches).where(TakenMatches.id == match_id))
-
                         session.commit()
                         logger.info('Inserted match-player info into database.')
     finally:
